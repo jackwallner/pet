@@ -11,5 +11,5 @@ Verify this against the configured RevenueCat SDK and Apple's current form befor
 - Notifications: local notification permission, outside analytics attributes.
 
 Custom measurement values contain only counts, dates and fixed product/surface identifiers.
-The production RevenueCat key is empty. Verify the final SDK collection and
+Verify the final SDK collection and
 customer-attribute delivery during Gate 1(g) after console setup.
