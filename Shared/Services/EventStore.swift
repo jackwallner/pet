@@ -93,19 +93,56 @@ final class EventStore: ObservableObject {
             Measurements.once("joined_share_at", defaults: defaults)
             defaults.set(true, forKey: "onboarded")
         }
-        let records = Array(household?.records ?? [])
-        pets = settings(records, category: "pet", type: PetProfile.self).sorted { $0.createdAt < $1.createdAt }
-        medications = settings(records, category: "med", type: Medication.self).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        dueItems = settings(records, category: "due", type: DueItem.self).sorted { $0.name < $1.name }
+        let current = contents(of: household)
+        pets = current.pets
+        medications = current.medications
+        dueItems = current.dueItems
+        events = current.events
+        if !pets.contains(where: { $0.id == selectedPetID }) { selectedPetID = pets.first?.id }
+        awaitingShare = defaults.bool(forKey: "pendingShare")
+        Reminders.schedule(store: self)
+    }
+
+    struct HouseholdContents {
+        var pets: [PetProfile] = []
+        var medications: [Medication] = []
+        var dueItems: [DueItem] = []
+        var events: [EventRecord] = []
+        var access = HouseholdAccess(activeUntil: nil, isOwner: true, wasShared: false)
+    }
+
+    func contents(of root: Household?) -> HouseholdContents {
+        guard let root else { return HouseholdContents() }
+        let records = Array(root.records ?? [])
         // Identity protects transport redelivery only. Independent taps always have independent IDs.
         var byID: [UUID: EventRecord] = [:]
         for record in records where record.category == "event" {
             if let value = record.decode(EventRecord.self) { byID[value.id] = value }
         }
-        events = EventLedger.ordered(Array(byID.values)).reversed()
-        if !pets.contains(where: { $0.id == selectedPetID }) { selectedPetID = pets.first?.id }
-        awaitingShare = defaults.bool(forKey: "pendingShare")
-        Reminders.schedule(store: self)
+        return HouseholdContents(
+            pets: settings(records, category: "pet", type: PetProfile.self).sorted { $0.createdAt < $1.createdAt },
+            medications: settings(records, category: "med", type: Medication.self).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
+            dueItems: settings(records, category: "due", type: DueItem.self).sorted { $0.name < $1.name },
+            events: EventLedger.ordered(Array(byID.values)).reversed(),
+            access: HouseholdAccess(activeUntil: root.householdActiveUntil, isOwner: root.objectID.persistentStore != persistence.sharedStore,
+                                    wasShared: root.wasShared?.boolValue ?? false))
+    }
+
+    /// Reminders come from every household on this phone, so viewing one log never silences another's reminder phone.
+    var reminderSources: [HouseholdContents] {
+        households.map { root in
+            guard root == household else { return contents(of: root) }
+            return HouseholdContents(pets: pets, medications: medications, dueItems: dueItems, events: events, access: access)
+        }
+    }
+
+    /// Opens the log that holds a pet, switching household when a reminder belongs to the other one.
+    func focus(petID: UUID) {
+        if !pets.contains(where: { $0.id == petID }),
+           let root = households.first(where: { $0 != household && contents(of: $0).pets.contains { $0.id == petID } }) {
+            selectHousehold(root)
+        }
+        if pets.contains(where: { $0.id == petID }) { select(petID) }
     }
 
     private func settings<T: Decodable & Identifiable>(_ records: [StoredRecord], category: String, type: T.Type) -> [T] where T.ID == UUID {
@@ -168,7 +205,12 @@ final class EventStore: ObservableObject {
         reload()
     }
 
-    func select(_ id: UUID) { selectedPetID = id; defaults.set(id.uuidString, forKey: "selectedPetID") }
+    func select(_ id: UUID) {
+        // The undo bar names an entry of the pet on screen; another pet's entry cannot be undone from here.
+        if lastLogged.map({ $0.petID != id }) == true { lastLogged = nil }
+        selectedPetID = id
+        defaults.set(id.uuidString, forKey: "selectedPetID")
+    }
 
     @discardableResult
     func saveMedication(_ value: Medication) -> Bool {
@@ -225,10 +267,14 @@ final class EventStore: ObservableObject {
     }
 
     func setHouseholdExpiry(_ date: Date?) {
-        guard isOwner else { return }
-        let root = ensureHousehold()
         // An unavailable receipt must never manufacture a fresh subscription or erase its lapse date.
-        if let date { root.householdActiveUntil = date }
+        guard let date else { return }
+        // The purchase covers the household this account owns, even while a joined household is on screen.
+        let owned = households.filter { $0.objectID.persistentStore != persistence.sharedStore }
+        let roots = owned.isEmpty ? (isOwner ? [ensureHousehold()] : []) : owned
+        let stale = roots.filter { $0.householdActiveUntil != date }
+        guard !stale.isEmpty else { return }
+        for root in stale { root.householdActiveUntil = date }
         if !persistence.save(context) { error = "Household status could not be saved." }
         reload()
     }

@@ -134,6 +134,65 @@ final class DomainTests: XCTestCase {
         store.setHouseholdExpiry(.now.addingTimeInterval(86400))
         XCTAssertEqual(store.household?.householdActiveUntil, before)
     }
+    private func joinSharedHousehold(activeUntil: Date? = nil) -> Household {
+        let shared = Household(context: persistence.viewContext)
+        shared.id = UUID(); shared.createdAt = .now; shared.householdActiveUntil = activeUntil
+        persistence.viewContext.assign(shared, to: persistence.sharedStore)
+        XCTAssertTrue(persistence.save(persistence.viewContext))
+        defaults.set(true, forKey: "pendingShare")
+        store.reload()
+        return shared
+    }
+    func testRenewalReachesOwnedHouseholdWhileJoinedOneIsOnScreen() {
+        let own = store.household!
+        let shared = joinSharedHousehold(activeUntil: .now.addingTimeInterval(-86400))
+        XCTAssertFalse(store.isOwner)
+        let renewal = Date.now.addingTimeInterval(30 * 86400)
+        store.setHouseholdExpiry(renewal)
+        XCTAssertEqual(own.householdActiveUntil, renewal)
+        XCTAssertNotEqual(shared.householdActiveUntil, renewal)
+    }
+    func testUnknownReceiptCreatesNoHousehold() {
+        let fresh = EventStore(persistence: Persistence(cloudKit: false, inMemory: true), defaults: UserDefaults(suiteName: "pet.tests.\(UUID())")!)
+        fresh.setHouseholdExpiry(nil)
+        XCTAssertNil(fresh.household)
+        XCTAssertTrue(fresh.households.isEmpty)
+    }
+    func testViewingJoinedHouseholdKeepsOwnMedicationReminders() {
+        let milo = store.pet!.id
+        XCTAssertTrue(store.saveMedication(med()))
+        _ = joinSharedHousehold(activeUntil: .now.addingTimeInterval(86400))
+        XCTAssertFalse(store.isOwner)
+        XCTAssertTrue(store.medications.isEmpty)
+        let now = day(2026, 11, 6)
+        let planned = store.reminderSources.flatMap { source in
+            ReminderPlanner.plan(medications: source.medications, items: source.dueItems, events: source.events, phoneID: store.phoneID,
+                                 writablePets: Set(source.pets.enumerated().filter { source.access.canWrite(petIndex: $0.offset, at: now) }.map(\.element.id)),
+                                 now: now, calendar: calendar)
+        }
+        XCTAssertEqual(planned.count, 7)
+        store.focus(petID: milo)
+        XCTAssertTrue(store.isOwner)
+        XCTAssertEqual(store.pet?.id, milo)
+    }
+    func testDueReminderStaysOnThePhoneThatSetIt() {
+        let now = day(2026, 11, 6)
+        var item = DueItem(petID: store.pet!.id, name: "Walk", startDate: now, remindersEnabled: true, reminderPhoneID: "phone-a", editedBy: "Jack")
+        let plan = { (phone: String) in ReminderPlanner.plan(medications: [], items: [item], events: [], phoneID: phone, writablePets: [item.petID], now: now, calendar: self.calendar) }
+        XCTAssertFalse(plan("phone-a").isEmpty)
+        XCTAssertTrue(plan("phone-b").isEmpty)
+        item.reminderPhoneID = nil
+        XCTAssertFalse(plan("phone-b").isEmpty)
+    }
+    func testSwitchingPetDropsTheOtherPetsUndo() {
+        store.setHouseholdExpiry(.now.addingTimeInterval(86400))
+        let milo = store.pet!.id
+        XCTAssertTrue(store.savePet(PetProfile(name: "Luna", species: .cat, editedBy: "Jack")))
+        XCTAssertTrue(store.log(.meal))
+        XCTAssertNotNil(store.lastLogged)
+        store.select(milo)
+        XCTAssertNil(store.lastLogged)
+    }
     func testScheduleUsesEnteredTimesAndMatchesGivenAndSkipped() {
         let medication = med(minutes: [480, 1200])
         let today = day(2026, 11, 6)

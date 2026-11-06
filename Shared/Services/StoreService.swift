@@ -76,7 +76,8 @@ final class StoreService: NSObject, ObservableObject, PurchasesDelegate {
             guard isConfigured else { return }
             let offerings = try await Purchases.shared.offerings()
             let offering = offerings.offering(identifier: AppConfig.offering)
-            packages = Dictionary(uniqueKeysWithValues: (offering?.availablePackages ?? []).map { ($0.storeProduct.productIdentifier, $0) })
+            // Two packages may name one product; a duplicate key must not crash the launch.
+            packages = Dictionary((offering?.availablePackages ?? []).map { ($0.storeProduct.productIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
             let eligibility = await Purchases.shared.checkTrialOrIntroDiscountEligibility(productIdentifiers: Array(packages.keys))
             plans = [AppConfig.yearly, AppConfig.monthly].compactMap { id in
                 guard let package = packages[id] else { return nil }

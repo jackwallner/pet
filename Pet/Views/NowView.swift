@@ -95,7 +95,7 @@ private struct LogButton: View {
         }
         .buttonStyle(.plain).disabled(!events.canWrite && kind != .meds)
         .accessibilityIdentifier("log.\(kind.rawValue.lowercased())")
-        .accessibilityLabel("\(kind.rawValue). \(last.map { "Last \($0.occurredAt.formatted(date: .omitted, time: .shortened)), \($0.author)" } ?? "Nothing logged")")
+        .accessibilityLabel("\(kind.rawValue). \(last.map { "Last \($0.occurredAt.formatted(date: .omitted, time: .shortened)), \($0.performedBy)" } ?? "Nothing logged")")
     }
 }
 

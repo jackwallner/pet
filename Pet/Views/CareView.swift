@@ -219,13 +219,15 @@ struct DueEditor: View {
         .task { permissionDenied = await Reminders.isDenied() }
         .onAppear {
             guard !loaded else { return }; loaded = true
-            if let item { name = item.name; at = ScheduleEngine.date(forMinutes: item.minutes, onDayOf: .now) ?? .now; interval = item.intervalDays; start = item.startDate; reminders = item.remindersEnabled }
+            if let item { name = item.name; at = ScheduleEngine.date(forMinutes: item.minutes, onDayOf: .now) ?? .now; interval = item.intervalDays; start = item.startDate; reminders = item.remindersEnabled && (item.reminderPhoneID ?? events.phoneID) == events.phoneID }
         }
     }
     private func save() async {
         guard let pet = events.pet else { return }
         if reminders && !LaunchOptions.contains("-UITesting") { _ = await Reminders.requestPermission() }
-        let value = DueItem(id: item?.id ?? UUID(), petID: pet.id, name: name.trimmingCharacters(in: .whitespacesAndNewlines), minutes: ScheduleEngine.minutes(from: at), intervalDays: interval, startDate: start, remindersEnabled: reminders, editedBy: events.caregiver)
+        // Another phone's reminder stays with it unless this phone takes it over.
+        let elsewhere = item.flatMap { $0.remindersEnabled ? $0.reminderPhoneID : nil }.flatMap { $0 == events.phoneID ? nil : $0 }
+        let value = DueItem(id: item?.id ?? UUID(), petID: pet.id, name: name.trimmingCharacters(in: .whitespacesAndNewlines), minutes: ScheduleEngine.minutes(from: at), intervalDays: interval, startDate: start, remindersEnabled: reminders || elsewhere != nil, reminderPhoneID: reminders ? events.phoneID : elsewhere, editedBy: events.caregiver)
         if events.saveDueItem(value) { dismiss() }
     }
 }

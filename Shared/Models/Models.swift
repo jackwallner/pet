@@ -58,6 +58,8 @@ struct DueItem: Codable, Identifiable, Equatable, Sendable {
     var intervalDays: Int = 1
     var startDate = Date.now
     var remindersEnabled = false
+    /// The phone that set "Remind on this iPhone". Nil only in entries saved before it existed.
+    var reminderPhoneID: String? = nil
     var archived = false
     var editedAt = Date.now
     var editedBy: String
