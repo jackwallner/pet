@@ -11,6 +11,7 @@ paths:
 # Verification
 
 On the Air, lease a simulator with `agent-sim checkout pet`. On the iMac there is no Xcode, so use `gh-sim all`.
+On GitHub's Macs two tests skip: StoreKit purchase stalls there and notification banners never show. Both pass on a local simulator, so run them locally after touching purchases or `NotificationRouter`.
 
 Debug flags: `-SeedDemo`, `-DemoPro`, `-Onboarding`, `-OnboardingTrial`, `-EmptyLog`,
 `-UITesting`, `-SimPartner`, `-ReminderProbe`, `-NoCloudKit`, `-Appearance light|dark`, `-LargeText`, `-SmallPhone`,
