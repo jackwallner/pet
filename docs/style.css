@@ -1,0 +1,6 @@
+:root { color-scheme: light dark; font: 18px/1.6 system-ui, sans-serif; background: #f7f2e8; color: #30271e; }
+body { max-width: 44rem; margin: auto; padding: 2rem 1.25rem 4rem; }
+a { color: #70482b; text-underline-offset: .2em; }
+h1 { line-height: 1.15; } h2 { margin-top: 2rem; }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 3rem; }
+@media (prefers-color-scheme: dark) { :root { background: #191816; color: #f0e7d7; } a { color: #e6b67d; } }

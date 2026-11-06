@@ -1,0 +1,3 @@
+// Committed base config. Secrets.xcconfig (gitignored, see Secrets.example.xcconfig)
+// holds the suggestion URL and key. Without it the app builds and cannot send suggestions.
+#include? "Secrets.xcconfig"

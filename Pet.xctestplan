@@ -1,0 +1,46 @@
+{
+  "configurations": [
+    {
+      "id": "868A5C27-6D36-40B0-9892-ACFD643DEFB7",
+      "name": "Local StoreKit",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "storeKitConfiguration": {
+      "identifier": "Pet.storekit"
+    },
+    "targetForVariableExpansion": {
+      "containerPath": "container:Pet.xcodeproj",
+      "identifier": "36FCADA66287144ACD87416A",
+      "name": "Pet"
+    },
+    "commandLineArgumentEntries": [
+      {
+        "argument": "-NoCloudKit",
+        "enabled": true
+      },
+      {
+        "argument": "-UITesting",
+        "enabled": true
+      }
+    ]
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:Pet.xcodeproj",
+        "identifier": "9F184D7037BDB0EA25383DB0",
+        "name": "PetTests"
+      }
+    },
+    {
+      "target": {
+        "containerPath": "container:Pet.xcodeproj",
+        "identifier": "B98B7557FE4B2EC357738B97",
+        "name": "PetUITests"
+      }
+    }
+  ],
+  "version": 1
+}

@@ -1,0 +1,11 @@
+default_platform(:ios)
+platform :ios do
+  desc "Validate draft metadata without uploading"
+  lane :metadata_check do
+    required = %w[name subtitle keywords description support_url privacy_url release_notes]
+    required.each do |name|
+      path = File.join("metadata", "en-US", "#{name}.txt")
+      UI.user_error!("Missing #{path}") unless File.exist?(path)
+    end
+  end
+end

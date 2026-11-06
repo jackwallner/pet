@@ -1,0 +1,85 @@
+{
+  "identifier": "PetStoreKitConfig",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "YXG4MP6W39",
+    "_failTransactionsEnabled": false,
+    "_lastSynchronizedDate": 0,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [
+    {
+      "id": "2001",
+      "localizations": [
+        {
+          "displayName": "Household",
+          "locale": "en_US",
+          "description": "Household sharing, extra pets and a sitter sheet."
+        }
+      ],
+      "name": "Household",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "2.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "2002",
+          "introductoryOffer": {
+            "internalID": "2102",
+            "numberOfPeriods": 1,
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W"
+          },
+          "localizations": [
+            {
+              "description": "Household sharing, extra pets and a sitter sheet.",
+              "displayName": "Household Monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.jackwallner.pet.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Household Monthly",
+          "subscriptionGroupID": "2001",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "19.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "2003",
+          "introductoryOffer": {
+            "internalID": "2103",
+            "numberOfPeriods": 1,
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W"
+          },
+          "localizations": [
+            {
+              "description": "Household sharing, extra pets and a sitter sheet.",
+              "displayName": "Household Yearly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.jackwallner.pet.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Household Yearly",
+          "subscriptionGroupID": "2001",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

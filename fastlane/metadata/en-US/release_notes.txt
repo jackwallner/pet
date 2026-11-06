@@ -1,0 +1,1 @@
+The first release: daily logging, medication records, entered reminders, household sharing and sitter sheet PDFs.
