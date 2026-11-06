@@ -34,11 +34,11 @@ struct PetApp: App {
                         events.reload()
                     }
                     #endif
-                    await store.start()
-                    await sharing.refresh()
                     #if DEBUG
                     await ReminderProbe.askPermissionIfAsked()
                     #endif
+                    await store.start()
+                    await sharing.refresh()
                 }
                 .onChange(of: scenePhase) { _, phase in
                     #if DEBUG

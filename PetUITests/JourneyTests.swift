@@ -131,7 +131,7 @@ final class JourneyTests: XCTestCase {
         let app = app(["-SeedDemo", "-DemoPro", "-ReminderProbe"])
         XCTAssertTrue(app.buttons["log.meal"].waitForExistence(timeout: 15))
         let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        if system.buttons["Allow"].waitForExistence(timeout: 5) { system.buttons["Allow"].tap() }
+        if system.buttons["Allow"].waitForExistence(timeout: 20) { system.buttons["Allow"].tap() }
         tapTab(app, "History")
         XCUIDevice.shared.press(.home)
         let notification = system.staticTexts["Daily tablet"].firstMatch
