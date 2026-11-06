@@ -93,7 +93,7 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate, @unc
         Task { @MainActor in
             defer { done() }
             let store = EventStore.shared
-            if let petID { store.select(petID) }
+            if let petID { store.focus(petID: petID) }
             store.notificationMedicationID = isMedication ? itemID : nil
             if isDueCompletion, let itemID, let scheduledAt,
                let item = store.dueItems.first(where: { $0.id == itemID && !$0.archived }),

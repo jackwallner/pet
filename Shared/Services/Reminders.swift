@@ -26,7 +26,7 @@ enum ReminderPlanner {
                 }
             }
         }
-        for item in items where item.remindersEnabled && writablePets.contains(item.petID) {
+        for item in items where item.remindersEnabled && (item.reminderPhoneID ?? phoneID) == phoneID && writablePets.contains(item.petID) {
             for due in DueEngine.occurrences(for: item, from: now, days: 30, events: events, calendar: calendar) where !due.completed && due.date > now {
                 result.append(PlannedReminder(id: "due.\(due.id)", title: item.name, body: "Due now", date: due.date,
                                                isMedication: false, itemID: item.id, petID: item.petID))
@@ -54,9 +54,13 @@ enum Reminders {
     }
     static func schedule(store: EventStore) {
         guard !LaunchOptions.contains("-UITesting") else { return }
-        let writable = Set(store.pets.enumerated().filter { store.access.canWrite(petIndex: $0.offset, at: .now) }.map { $0.element.id })
-        let planned = ReminderPlanner.plan(medications: store.medications, items: store.dueItems, events: store.events,
-                                          phoneID: store.phoneID, writablePets: writable, now: .now)
+        let now = Date.now
+        let sources = store.reminderSources
+        let planned = Array(sources.flatMap { source in
+            let writable = Set(source.pets.enumerated().filter { source.access.canWrite(petIndex: $0.offset, at: now) }.map { $0.element.id })
+            return ReminderPlanner.plan(medications: source.medications, items: source.dueItems, events: source.events,
+                                        phoneID: store.phoneID, writablePets: writable, now: now)
+        }.sorted { $0.date < $1.date }.prefix(60))
         generation += 1
         let current = generation
         Task {
@@ -65,6 +69,8 @@ enum Reminders {
             guard current == generation else { return }
             center.removePendingNotificationRequests(withIdentifiers: pending.filter { $0.identifier.hasPrefix("med.") || $0.identifier.hasPrefix("due.") }.map(\.identifier))
             for item in planned {
+                // A newer plan replaced this one while it was adding; its removal already ran, so stop here.
+                guard current == generation else { return }
                 let content = UNMutableNotificationContent()
                 content.title = item.title
                 content.body = item.body
