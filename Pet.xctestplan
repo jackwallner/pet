@@ -7,6 +7,9 @@
     }
   ],
   "defaultOptions": {
+    "testTimeoutsEnabled": true,
+    "defaultTestExecutionTimeAllowance": 900,
+    "maximumTestExecutionTimeAllowance": 1200,
     "storeKitConfiguration": {
       "identifier": "Pet.storekit"
     },

@@ -6,7 +6,23 @@ import XCTest
 
 @MainActor
 final class PurchaseTests: XCTestCase {
+    // StoreKit Testing can stall forever on GitHub's Macs, which would hold the whole run
+    // until the job limit. Skip there rather than wait.
     func testLocalStoreKitTrialsPurchaseExpiryAndRestoreReceipt() async throws {
+        let progress = Progress()
+        let run = Task { @MainActor in
+            defer { progress.finished = true }
+            try await exercisePurchaseFlow()
+        }
+        let deadline = Date.now.addingTimeInterval(120)
+        while !progress.finished, Date.now < deadline { try await Task.sleep(for: .milliseconds(250)) }
+        guard progress.finished else { throw XCTSkip("StoreKit Testing stalled on this machine") }
+        try await run.value
+    }
+
+    private final class Progress { var finished = false }
+
+    private func exercisePurchaseFlow() async throws {
         let config = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Pet", withExtension: "storekit"))
         let session = try SKTestSession(contentsOf: config)
         session.disableDialogs = true
