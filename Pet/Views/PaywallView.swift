@@ -8,6 +8,7 @@ struct PaywallView: View {
     @EnvironmentObject private var store: StoreService
     @EnvironmentObject private var events: EventStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var selected = AppConfig.yearly
     private var plan: PurchasePlan? { store.plans.first { $0.id == selected } ?? store.plans.first }
     private var cta: String { plan?.eligibleForTrial == true ? "Start 7-day free trial" : "Subscribe" }
@@ -19,7 +20,7 @@ struct PaywallView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if onboarding { Text("Household").font(.largeTitle.bold()) }
-                SharedWorkflowPreview()
+                if !typeSize.isAccessibilitySize { SharedWorkflowPreview() }
                 VStack(alignment: .leading, spacing: 12) {
                     Label("One subscription for your household", systemImage: "person.2")
                     Label("Extra pets", systemImage: "pawprint")
@@ -50,27 +51,30 @@ struct PaywallView: View {
                     }.accessibilityValue(store.usingStoreKitTesting ? "StoreKit Testing products" : "Store products")
                 }
                 if let error = store.error { Text(error).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                // Pinned at large text sizes, the footer leaves almost no room for the plans.
+                if typeSize.isAccessibilitySize { footer }
             }.padding(20)
         }
         .background(Theme.background)
         .navigationTitle(onboarding ? "" : "Household").navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
-            if onboarding {
-                OnboardingFooter(title: cta, disclosure: disclosure, trial: true, disabled: plan == nil || store.busy,
-                                 action: buy, exit: finish)
-            } else {
-                VStack(spacing: 12) {
-                    Text(disclosure).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    PrimaryButton(title: store.busy ? "Please wait" : cta, disabled: plan == nil || store.busy, action: buy).accessibilityIdentifier("paywall.buy")
-                    LegalLinks()
-                }.padding(20).background(Theme.background)
-            }
-        }
+        .safeAreaInset(edge: .bottom) { if !typeSize.isAccessibilitySize { footer } }
         .toolbar { if !onboarding { ToolbarItem(placement: .cancellationAction) { DismissButton() } } }
         .onAppear {
             if let selection = LaunchOptions.value("-PaywallSnapshot") { selected = selection == "monthly" ? AppConfig.monthly : AppConfig.yearly }
             store.error = nil
             if events.isOwner { store.pitch(source) }
+        }
+    }
+    @ViewBuilder private var footer: some View {
+        if onboarding {
+            OnboardingFooter(title: cta, disclosure: disclosure, trial: true, disabled: plan == nil || store.busy,
+                             action: buy, exit: finish)
+        } else {
+            VStack(spacing: 12) {
+                Text(disclosure).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                PrimaryButton(title: store.busy ? "Please wait" : cta, disabled: plan == nil || store.busy, action: buy).accessibilityIdentifier("paywall.buy")
+                LegalLinks()
+            }.padding(typeSize.isAccessibilitySize ? 0 : 20).background(Theme.background)
         }
     }
     private func buy() {
