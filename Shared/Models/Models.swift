@@ -11,6 +11,10 @@ enum Species: String, Codable, CaseIterable, Identifiable, Sendable {
         case .fish, .reptile: [.meal, .water, .cleaning, .meds]
         }
     }
+    /// A type added by a newer build reads as Other, so the pet never disappears from an older phone.
+    init(from decoder: Decoder) throws {
+        self = Species(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .other
+    }
     var symbol: String {
         switch self {
         case .dog: "dog"
@@ -26,8 +30,12 @@ enum Species: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 enum EventKind: String, Codable, CaseIterable, Identifiable, Sendable {
-    case potty = "Potty", meal = "Meal", walk = "Walk", meds = "Meds", litter = "Litter", play = "Play", cleaning = "Cleaning", water = "Water", due = "Due item"
+    case potty = "Potty", meal = "Meal", walk = "Walk", meds = "Meds", litter = "Litter", play = "Play", cleaning = "Cleaning", water = "Water", due = "Due item", other = "Other activity"
     var id: String { rawValue }
+    /// An activity added by a newer build stays in the log on an older phone.
+    init(from decoder: Decoder) throws {
+        self = EventKind(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .other
+    }
     var symbol: String {
         switch self {
         case .potty: "drop"
@@ -39,6 +47,7 @@ enum EventKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .cleaning: "sparkles"
         case .water: "water.waves"
         case .due: "checkmark.circle"
+        case .other: "circle"
         }
     }
 }

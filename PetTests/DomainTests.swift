@@ -107,6 +107,16 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(Species(rawValue: "Dog"), .dog)
         XCTAssertEqual(Species(rawValue: "Cat"), .cat)
     }
+    func testRecordsFromANewerBuildStayReadable() throws {
+        let pet = try JSONEncoder().encode(PetProfile(name: "Axl", species: .fish, editedBy: "Jack"))
+        let newerPet = Data(String(decoding: pet, as: UTF8.self).replacingOccurrences(of: "\"Fish\"", with: "\"Axolotl\"").utf8)
+        let decodedPet = try JSONDecoder().decode(PetProfile.self, from: newerPet)
+        XCTAssertEqual(decodedPet.name, "Axl")
+        XCTAssertEqual(decodedPet.species, .other)
+        let event = try JSONEncoder().encode(EventRecord(petID: UUID(), kind: .water, author: "Jack", authorID: "1"))
+        let newerEvent = Data(String(decoding: event, as: UTF8.self).replacingOccurrences(of: "\"Water\"", with: "\"Molting\"").utf8)
+        XCTAssertEqual(try JSONDecoder().decode(EventRecord.self, from: newerEvent).kind, .other)
+    }
     func testPaidExtraPetThenLapsePreservesViewAndFirstPetLogging() {
         store.setHouseholdExpiry(.now.addingTimeInterval(86400))
         XCTAssertTrue(store.savePet(PetProfile(name: "Luna", species: .cat, editedBy: "Jack")))
