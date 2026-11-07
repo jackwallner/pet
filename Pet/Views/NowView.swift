@@ -26,7 +26,7 @@ struct NowView: View {
                             .accessibilityElement(children: .combine).accessibilityIdentifier("medication.reminderContext")
                     }
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: typeSize.isAccessibilitySize ? 1 : 2), spacing: 12) {
-                        ForEach(pet.species.kinds) { kind in
+                        ForEach(pet.shownLogKinds) { kind in
                             LogButton(kind: kind, last: NowSummary.last(kind, petID: pet.id, events: events.events)) {
                                 if kind == .meds { meds = true }
                                 else if events.log(kind) { askForRatingSoon() }

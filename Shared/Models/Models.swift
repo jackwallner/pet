@@ -32,6 +32,8 @@ enum Species: String, Codable, CaseIterable, Identifiable, Sendable {
 enum EventKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case potty = "Potty", meal = "Meal", walk = "Walk", meds = "Meds", litter = "Litter", play = "Play", cleaning = "Cleaning", water = "Water", due = "Due item", other = "Other activity"
     var id: String { rawValue }
+    /// The activities that can be a button on Now.
+    static let loggable: [EventKind] = [.potty, .meal, .walk, .meds, .litter, .play, .cleaning, .water]
     /// An activity added by a newer build stays in the log on an older phone.
     init(from decoder: Decoder) throws {
         self = EventKind(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .other
@@ -55,7 +57,8 @@ enum EventKind: String, Codable, CaseIterable, Identifiable, Sendable {
 struct PetProfile: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var name: String
-    var species: Species = .dog
+    /// The buttons were chosen for the old animal, so a new species starts from its own.
+    var species: Species = .dog { didSet { if species != oldValue { logButtons = nil } } }
     var birthday: Date?
     var createdAt = Date.now
     var editedAt = Date.now
@@ -66,6 +69,26 @@ struct PetProfile: Codable, Identifiable, Equatable, Sendable {
     var microchip: String?
     var insurance: String?
     var notes: String?
+    /// Nil until someone customizes the buttons, so the species defaults apply.
+    var logButtons: [LogButtonSetting]?
+
+    /// Every activity in display order, with the ones not on Now marked hidden.
+    var logButtonSettings: [LogButtonSetting] {
+        guard let logButtons else {
+            let rest = EventKind.loggable.filter { !species.kinds.contains($0) }
+            return species.kinds.map { LogButtonSetting(kind: $0, shown: true) } + rest.map { LogButtonSetting(kind: $0, shown: false) }
+        }
+        var seen = Set<EventKind>()
+        let saved = logButtons.filter { EventKind.loggable.contains($0.kind) && seen.insert($0.kind).inserted }
+        return saved + EventKind.loggable.filter { !seen.contains($0) }.map { LogButtonSetting(kind: $0, shown: false) }
+    }
+    var shownLogKinds: [EventKind] { logButtonSettings.filter(\.shown).map(\.kind) }
+}
+
+struct LogButtonSetting: Codable, Identifiable, Equatable, Sendable {
+    let kind: EventKind
+    var shown: Bool
+    var id: String { kind.id }
 }
 
 /// One pet's photo, in its own record so saving a pet's name never rewrites the image.

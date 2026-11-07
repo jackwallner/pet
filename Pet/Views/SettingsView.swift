@@ -28,6 +28,9 @@ struct SettingsView: View {
                     .onSubmit { if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { events.caregiver = name } }
                     .onChange(of: name) { _, value in if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { events.caregiver = value } }
                 NavigationLink { PetsView() } label: { Label("Pets", systemImage: "pawprint") }.accessibilityIdentifier("settings.pets")
+                if events.pet != nil {
+                    NavigationLink { LogButtonsView() } label: { Label("Log buttons", systemImage: "square.grid.2x2") }.accessibilityIdentifier("settings.logButtons")
+                }
                 NavigationLink { HouseholdView() } label: { Label("Household", systemImage: "person.2") }.accessibilityIdentifier("settings.household")
             }
             Section {

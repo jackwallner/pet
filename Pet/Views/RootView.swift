@@ -65,6 +65,7 @@ struct RouteView: View {
         Group {
             switch route {
             case "pets": PetsView()
+            case "buttons": LogButtonsView()
             case "pet": PetEditor(profile: events.pet)
             case "medications": MedicationsView()
             case "medication": MedicationEditor(medication: events.petMedications.first)
@@ -82,7 +83,7 @@ struct RouteView: View {
             }
         }
         .toolbar {
-            if ["pets", "medications", "household", "sitter"].contains(route) {
+            if ["pets", "buttons", "medications", "household", "sitter"].contains(route) {
                 ToolbarItem(placement: .cancellationAction) { DismissButton() }
             }
         }

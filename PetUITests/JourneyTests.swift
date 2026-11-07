@@ -245,6 +245,46 @@ final class JourneyTests: XCTestCase {
         app.terminate()
     }
 
+    func testLogButtonsCanBeHiddenAddedAndReordered() {
+        let app = app(["-SeedDemo"])
+        XCTAssertTrue(app.buttons["log.walk"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["log.play"].exists)
+        XCTAssertLessThan(app.buttons["log.potty"].frame.minX, app.buttons["log.meal"].frame.minX)
+        tapTab(app, "Settings")
+        app.buttons["settings.logButtons"].tap()
+        // The identifier sits on the row. Only the inner control flips the toggle.
+        let toggle = { (name: String) in app.switches["logButton.\(name)"].switches.firstMatch }
+        XCTAssertTrue(toggle("Walk").waitForExistence(timeout: 5))
+        toggle("Walk").tap()
+        toggle("Play").tap()
+        let handle = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reorder'")).firstMatch
+        XCTAssertTrue(handle.waitForExistence(timeout: 5))
+        handle.press(forDuration: 1, thenDragTo: app.switches["logButton.Meds"], withVelocity: .slow, thenHoldForDuration: 1)
+        shot(app, "log-buttons")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        tapTab(app, "Now")
+        XCTAssertTrue(app.buttons["log.play"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["log.walk"].exists)
+        let meal = app.buttons["log.meal"].frame, potty = app.buttons["log.potty"].frame
+        XCTAssertTrue(meal.minY < potty.minY || (meal.minY == potty.minY && meal.minX < potty.minX), "Meal should now come before Potty")
+        shot(app, "now-custom-buttons")
+        // Hiding a button leaves its entries and medications alone, and one button always stays.
+        tapTab(app, "Settings")
+        app.buttons["settings.logButtons"].tap()
+        for name in ["Meal", "Potty", "Meds"] { toggle(name).tap() }
+        XCTAssertFalse(toggle("Play").isEnabled)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        tapTab(app, "Now")
+        XCTAssertTrue(app.buttons["log.play"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["log.meds"].exists)
+        tapTab(app, "History")
+        XCTAssertTrue(app.buttons["history.entry"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(identifier: "history.entry").count, 4)
+        tapTab(app, "Care")
+        XCTAssertTrue(app.buttons["care.medications"].waitForExistence(timeout: 5))
+        app.terminate()
+    }
+
     func testSitterSheetShowsPetPhoto() {
         let app = app(["-SeedDemo", "-DemoPro", "-DemoPhoto", "-ScreenshotRoute", "sitter"])
         XCTAssertTrue(app.buttons["Share PDF"].waitForExistence(timeout: 15))
@@ -266,7 +306,7 @@ final class JourneyTests: XCTestCase {
     }
 
     func testAllMainScreensLightAndDark() throws {
-        let routes = ["now", "history", "care", "settings", "pets", "pet", "medications", "medication", "dose", "due", "household", "join", "invite", "sitter", "correction", "paywall"]
+        let routes = ["now", "history", "care", "settings", "pets", "buttons", "pet", "medications", "medication", "dose", "due", "household", "join", "invite", "sitter", "correction", "paywall"]
         for mode in ["light", "dark"] {
             for route in routes {
                 var args = ["-SeedDemo", "-DemoPro", "-ScreenshotRoute", route, "-Appearance", mode]
@@ -298,7 +338,7 @@ final class JourneyTests: XCTestCase {
         }
     }
     func testLargeTextAndSmallWidthScreens() {
-        for route in ["now", "history", "care", "settings", "pets", "pet", "medication", "dose", "household", "paywall"] {
+        for route in ["now", "history", "care", "settings", "pets", "buttons", "pet", "medication", "dose", "household", "paywall"] {
             // The system setting, so sheets get large text too.
             let app = app(["-SeedDemo", "-DemoPro", "-LargeText", "-SmallPhone", "-ScreenshotRoute", route, "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
             if route == "paywall" { XCTAssertTrue(app.buttons["plan.yearly"].waitForExistence(timeout: 20)) }

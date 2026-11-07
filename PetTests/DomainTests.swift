@@ -100,6 +100,52 @@ final class DomainTests: XCTestCase {
             XCTAssertTrue(species.kinds.contains(.meds), species.rawValue)
         }
     }
+    func testLogButtonsDefaultToTheSpeciesAndOfferEveryActivity() {
+        let pet = PetProfile(name: "Bubbles", species: .fish, editedBy: "Jack")
+        XCTAssertEqual(pet.shownLogKinds, Species.fish.kinds)
+        XCTAssertEqual(Set(pet.logButtonSettings.map(\.kind)), Set(EventKind.loggable))
+        XCTAssertEqual(pet.logButtonSettings.count, EventKind.loggable.count)
+    }
+    func testCustomLogButtonsSaveInOrderAndSurviveAReload() throws {
+        var pet = try XCTUnwrap(store.pet)
+        var settings = pet.logButtonSettings
+        settings.move(fromOffsets: IndexSet(integer: 2), toOffset: 0)
+        settings[settings.firstIndex { $0.kind == .meds }!].shown = false
+        settings[settings.firstIndex { $0.kind == .play }!].shown = true
+        pet.logButtons = settings
+        XCTAssertTrue(store.savePet(pet))
+        XCTAssertEqual(store.pet?.shownLogKinds, [.walk, .potty, .meal, .play])
+        let reloaded = EventStore(persistence: persistence, defaults: defaults)
+        XCTAssertEqual(reloaded.pet?.shownLogKinds, [.walk, .potty, .meal, .play])
+        XCTAssertEqual(reloaded.pet?.logButtonSettings.first?.kind, .walk)
+    }
+    func testChangingSpeciesRestoresItsButtons() {
+        var pet = PetProfile(name: "Milo", editedBy: "Jack")
+        pet.logButtons = [LogButtonSetting(kind: .walk, shown: true)]
+        pet.species = .dog
+        XCTAssertEqual(pet.shownLogKinds, [.walk])
+        pet.species = .cat
+        XCTAssertNil(pet.logButtons)
+        XCTAssertEqual(pet.shownLogKinds, Species.cat.kinds)
+    }
+    func testSavedLogButtonsFromANewerBuildStayUsable() throws {
+        let pet = PetProfile(name: "Milo", editedBy: "Jack", logButtons: [LogButtonSetting(kind: .walk, shown: true), LogButtonSetting(kind: .walk, shown: false), LogButtonSetting(kind: .other, shown: true)])
+        let decoded = try JSONDecoder().decode(PetProfile.self, from: JSONEncoder().encode(pet))
+        XCTAssertEqual(decoded.shownLogKinds, [.walk])
+        XCTAssertEqual(decoded.logButtonSettings.count, EventKind.loggable.count)
+        let older = Data(#"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"Rex","species":"Dog","createdAt":0,"editedAt":0,"editedBy":"Jack"}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(PetProfile.self, from: older).shownLogKinds, Species.dog.kinds)
+    }
+    func testSitterSheetKeepsAHiddenButtonsLastEntry() throws {
+        let medID = UUID()
+        XCTAssertTrue(store.append(event(.meds, medicationID: medID, status: .given)))
+        var pet = try XCTUnwrap(store.pet)
+        pet.logButtons = [LogButtonSetting(kind: .walk, shown: true)]
+        let lines = SitterSnapshot.build(pet: pet, medications: [], dueItems: [], events: store.events, lastSync: nil).lines
+        XCTAssertTrue(lines.contains("Walk: Nothing logged"))
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Meds: ") && $0.contains("Given") })
+        XCTAssertFalse(lines.contains { $0.hasPrefix("Potty") })
+    }
     func testNewSpeciesRoundTripsAndExistingStoredPetsStillDecode() throws {
         let fish = PetProfile(name: "Bubbles", species: .fish, editedBy: "Jack")
         let decoded = try JSONDecoder().decode(PetProfile.self, from: JSONEncoder().encode(fish))

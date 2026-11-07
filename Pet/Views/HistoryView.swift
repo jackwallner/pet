@@ -103,12 +103,18 @@ struct EarlierEntryView: View {
     @State private var kind = EventKind.meal
     @State private var at = Date.now
     @State private var note = ""
+    private var kinds: [EventKind] {
+        guard let pet = events.pet else { return [] }
+        let shown = pet.shownLogKinds.filter { $0 != .meds }
+        return shown.isEmpty ? pet.species.kinds.filter { $0 != .meds } : shown
+    }
     var body: some View {
         Form {
-            Picker("Activity", selection: $kind) { ForEach((events.pet?.species.kinds ?? []).filter { $0 != .meds }) { Text($0.rawValue).tag($0) } }
+            Picker("Activity", selection: $kind) { ForEach(kinds) { Text($0.rawValue).tag($0) } }
             DatePicker("Actual time", selection: $at, in: ...Date.now)
             TextField("Note", text: $note, axis: .vertical)
         }.biscuitList().navigationTitle("Earlier entry").navigationBarTitleDisplayMode(.inline)
+        .onAppear { if !kinds.contains(kind), let first = kinds.first { kind = first } }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { DismissButton() }
             ToolbarItem(placement: .confirmationAction) { Button("Save") { if events.log(kind, at: at, note: note) { dismiss() } }.disabled(!events.canWrite) }

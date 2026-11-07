@@ -34,7 +34,9 @@ struct SitterSnapshot: Equatable {
                      "This PDF is a snapshot. Check with the household for updates.", "", "ABOUT"]
         lines += about(pet, now: now)
         lines += ["", "LAST LOGGED"]
-        for kind in pet.species.kinds {
+        // A hidden button's entries still count: a sitter needs the last dose even if Meds is off Now.
+        let hidden = EventKind.loggable.filter { !pet.shownLogKinds.contains($0) && NowSummary.last($0, petID: pet.id, events: events) != nil }
+        for kind in pet.shownLogKinds + hidden {
             if let last = NowSummary.last(kind, petID: pet.id, events: events) {
                 lines.append("\(kind.rawValue): \(last.occurredAt.formatted(date: .abbreviated, time: .shortened)), \(last.performedBy)\(last.doseStatus.map { ", \($0.rawValue)" } ?? "")")
             } else { lines.append("\(kind.rawValue): Nothing logged") }

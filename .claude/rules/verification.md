@@ -19,7 +19,7 @@ Debug flags: `-SeedDemo`, `-DemoPro`, `-Onboarding`, `-OnboardingTrial`, `-Empty
 Debug builds count as TestFlight, so Settings shows Suggestions: never use a debug Settings shot as an App Store screenshot.
 `-UITesting` uses a new in-memory log; normal local launches persist the log.
 
-Routes: now, history, care, settings, pets, pet, medications, medication, dose,
+Routes: now, history, care, settings, pets, buttons, pet, medications, medication, dose,
 due, household, join, invite, sitter, correction, paywall.
 
 The UI test scheme activates `Pet.storekit`. Paywall verification must show
