@@ -77,6 +77,8 @@ final class JourneyTests: XCTestCase {
         app.buttons["household.invite"].tap()
         XCTAssertTrue(app.buttons["paywall.buy"].waitForExistence(timeout: 10))
         shot(app, "journey-invite-paywall")
+        app.buttons["plan.monthly"].tap()
+        shot(app, "journey-invite-paywall-monthly")
         app.buttons["Close"].firstMatch.tap()
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["settings.sitter"].tap()
