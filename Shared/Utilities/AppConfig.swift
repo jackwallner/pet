@@ -12,6 +12,12 @@ enum AppConfig {
     static let supportURL = URL(string: "https://jackwallner.github.io/pet/support.html")!
     static let reviewURL = URL(string: "https://apps.apple.com/app/id6831707940?action=write-review")!
     static let disclaimer = "Biscuit is a record keeper. Your veterinarian directs your pet's care."
+
+    static func versionLabel(info: [String: Any]? = Bundle.main.infoDictionary) -> String {
+        let version = info?["CFBundleShortVersionString"] as? String ?? ""
+        guard let build = info?["CFBundleVersion"] as? String, !build.isEmpty else { return version }
+        return "\(version) (\(build))"
+    }
 }
 
 enum AppGroup {

@@ -344,6 +344,11 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(store.pet?.name, "Milo")
         XCTAssertEqual(store.events.count, 1)
     }
+    func testVersionLabelIncludesBuild() {
+        XCTAssertEqual(AppConfig.versionLabel(info: ["CFBundleShortVersionString": "1.0.0", "CFBundleVersion": "3"]), "1.0.0 (3)")
+        XCTAssertEqual(AppConfig.versionLabel(info: ["CFBundleShortVersionString": "1.0.0"]), "1.0.0")
+    }
+
     func testSettingsShowLastEditor() {
         var pet = store.pet!
         pet.name = "Updated"

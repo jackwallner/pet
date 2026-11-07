@@ -166,6 +166,18 @@ final class JourneyTests: XCTestCase {
         app.terminate()
     }
 
+    func testSettingsShowsVersionAndBuild() {
+        let app = app(["-SeedDemo"])
+        XCTAssertTrue(app.buttons["log.meal"].waitForExistence(timeout: 15))
+        tapTab(app, "Settings")
+        let pattern = NSPredicate(format: "label MATCHES %@", ".*[0-9]+\\.[0-9]+\\.[0-9]+ \\([0-9]+\\).*")
+        let version = app.descendants(matching: .any).matching(pattern).firstMatch
+        for _ in 0..<8 where !version.exists { app.swipeUp() }
+        XCTAssertTrue(version.waitForExistence(timeout: 5))
+        shot(app, "settings-version")
+        app.terminate()
+    }
+
     func testAllMainScreensLightAndDark() throws {
         let routes = ["now", "history", "care", "settings", "pets", "pet", "medications", "medication", "dose", "due", "household", "join", "invite", "sitter", "correction", "paywall"]
         for mode in ["light", "dark"] {

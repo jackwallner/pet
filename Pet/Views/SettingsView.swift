@@ -51,7 +51,7 @@ struct SettingsView: View {
                 Link("Privacy", destination: AppConfig.privacyURL)
                 Link("Terms", destination: AppConfig.termsURL)
             }
-            Section { Text(AppConfig.disclaimer).font(.footnote).foregroundStyle(.secondary); LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") }
+            Section { Text(AppConfig.disclaimer).font(.footnote).foregroundStyle(.secondary); LabeledContent("Version", value: AppConfig.versionLabel()) }
         }.biscuitList().navigationTitle("Settings").onAppear { name = events.caregiver }
         .task {
             guard Distribution.isTestFlight,
