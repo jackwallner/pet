@@ -37,7 +37,7 @@ struct SitterView: View {
     }
     private func build() {
         guard let pet = events.pet else { return }
-        do { url = try SitterPDF.file(SitterSnapshot.build(pet: pet, medications: events.medications, dueItems: events.dueItems, events: events.events, lastSync: events.sync.lastSynced)) }
+        do { url = try SitterPDF.file(SitterSnapshot.build(pet: pet, medications: events.medications, dueItems: events.dueItems, events: events.events, lastSync: events.sync.lastSynced, photo: events.petPhotos[pet.id])) }
         catch { self.error = error.localizedDescription }
     }
 }

@@ -60,6 +60,37 @@ struct PetProfile: Codable, Identifiable, Equatable, Sendable {
     var createdAt = Date.now
     var editedAt = Date.now
     var editedBy: String
+    // Optional, because a required key would make every pet saved before it exist fail to decode.
+    var vet: String?
+    var vetPhone: String?
+    var microchip: String?
+    var insurance: String?
+    var notes: String?
+}
+
+/// One pet's photo, in its own record so saving a pet's name never rewrites the image.
+/// The id is the pet's. A nil image means the photo was removed, and the newest record wins.
+struct PetPhoto: Codable, Identifiable, Equatable, Sendable {
+    static let category = "petPhoto"
+    let id: UUID
+    let jpeg: Data?
+    var editedAt = Date.now
+    let editedBy: String
+}
+
+enum PetAge {
+    static func text(birthday: Date, now: Date = .now, calendar: Calendar = .current) -> String? {
+        guard birthday <= now else { return nil }
+        let from = calendar.startOfDay(for: birthday), to = calendar.startOfDay(for: now)
+        let days = calendar.dateComponents([.day], from: from, to: to).day ?? 0
+        if days == 0 { return "Born today" }
+        if days < 14 { return old(days, "day") }
+        if days < 112 { return old(days / 7, "week") }
+        let parts = calendar.dateComponents([.year, .month], from: from, to: to)
+        let months = (parts.year ?? 0) * 12 + (parts.month ?? 0)
+        return months < 24 ? old(months, "month") : old(months / 12, "year")
+    }
+    private static func old(_ count: Int, _ unit: String) -> String { "\(count) \(unit)\(count == 1 ? "" : "s") old" }
 }
 
 struct Medication: Codable, Identifiable, Equatable, Sendable {

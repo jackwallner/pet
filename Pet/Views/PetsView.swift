@@ -1,4 +1,19 @@
+import PhotosUI
 import SwiftUI
+
+struct PetAvatar: View {
+    let image: UIImage?
+    let symbol: String
+    let size: CGFloat
+    var body: some View {
+        ZStack {
+            Circle().fill(Theme.accent.opacity(0.14))
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else { Image(systemName: symbol).font(.system(size: size * 0.42)).foregroundStyle(Theme.accent) }
+        }
+        .frame(width: size, height: size).clipShape(Circle()).accessibilityHidden(true)
+    }
+}
 
 struct PetsView: View {
     @EnvironmentObject private var events: EventStore
@@ -9,12 +24,15 @@ struct PetsView: View {
         List {
             ForEach(events.pets) { pet in
                 Button { events.select(pet.id); editing = pet } label: {
-                    HStack {
-                        Label(pet.name, systemImage: pet.species.symbol).foregroundStyle(.primary)
+                    HStack(spacing: 12) {
+                        PetAvatar(image: events.petPhotos[pet.id], symbol: pet.species.symbol, size: 44)
+                        Text(pet.name).foregroundStyle(.primary)
                         Spacer()
-                        if events.pet?.id == pet.id { Image(systemName: "checkmark") }
-                    }.padding(.vertical, 8)
+                        if events.pet?.id == pet.id { Image(systemName: "checkmark").accessibilityHidden(true) }
+                    }.padding(.vertical, 4)
                 }
+                .accessibilityLabel(pet.name)
+                .accessibilityAddTraits(events.pet?.id == pet.id ? .isSelected : [])
             }
         }.biscuitList().navigationTitle("Pets").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button {
@@ -59,29 +77,127 @@ struct PetEditor: View {
     let profile: PetProfile?
     @EnvironmentObject private var events: EventStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var name = ""
     @State private var species = Species.dog
     @State private var birthday = Date.now
     @State private var knownBirthday = false
+    @State private var vet = ""
+    @State private var vetPhone = ""
+    @State private var microchip = ""
+    @State private var insurance = ""
+    @State private var notes = ""
+    @State private var photoItem: PhotosPickerItem?
+    @State private var image: UIImage?
+    @State private var jpeg: Data?
+    @State private var photoChanged = false
+    @State private var loadingPhoto = false
+    @State private var photoError: String?
     @State private var loaded = false
+    private var readOnly: Bool { profile != nil && !events.canWrite }
+    private var phoneURL: URL? {
+        let digits = vetPhone.filter { $0.isNumber || $0 == "+" }
+        return digits.count < 3 ? nil : URL(string: "tel:\(digits)")
+    }
     var body: some View {
         Form {
+            Section { photoRow }.listRowBackground(Color.clear).listRowInsets(EdgeInsets())
             Section {
                 TextField("Pet name", text: $name).accessibilityIdentifier("pet.name")
                 SpeciesPicker(selection: $species)
                 Toggle("Birthday", isOn: $knownBirthday)
                 if knownBirthday { DatePicker("Born", selection: $birthday, in: ...Date.now, displayedComponents: .date) }
             }
+            Section("Details") {
+                detail("Vet", text: $vet, id: "pet.vet")
+                HStack {
+                    detail("Vet phone", text: $vetPhone, id: "pet.vetPhone").keyboardType(.phonePad)
+                    if let phoneURL {
+                        Link(destination: phoneURL) { Image(systemName: "phone").frame(minWidth: 44, minHeight: 44) }
+                            .buttonStyle(.borderless).accessibilityLabel("Call vet").accessibilityIdentifier("pet.call")
+                    }
+                }
+                detail("Microchip", text: $microchip, id: "pet.microchip").autocorrectionDisabled()
+                detail("Insurance", text: $insurance, id: "pet.insurance")
+                detail("Notes", text: $notes, id: "pet.notes", axis: .vertical)
+            }
             if let profile { Section { EditedLine(author: profile.editedBy, date: profile.editedAt) } }
-        }.biscuitList().navigationTitle(profile == nil ? "Add a pet" : "Edit pet").navigationBarTitleDisplayMode(.inline)
+        }.biscuitList().scrollDismissesKeyboard(.interactively)
+        .navigationTitle(profile == nil ? "Add a pet" : "Edit pet").navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { DismissButton() }
-            ToolbarItem(placement: .confirmationAction) { Button("Save") {
-                var pet = profile ?? PetProfile(name: name, editedBy: events.caregiver)
-                pet.name = name.trimmingCharacters(in: .whitespacesAndNewlines); pet.species = species; pet.birthday = knownBirthday ? birthday : nil
-                if events.savePet(pet) { dismiss() }
-            }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("pet.save") }
+            ToolbarItem(placement: .confirmationAction) { Button("Save", action: save)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || loadingPhoto || readOnly).accessibilityIdentifier("pet.save") }
         }
-        .onAppear { guard !loaded else { return }; loaded = true; if let profile { name = profile.name; species = profile.species; birthday = profile.birthday ?? .now; knownBirthday = profile.birthday != nil } }
+        .onChange(of: photoItem) { _, item in if let item { Task { await load(item) } } }
+        .onAppear(perform: fill)
+    }
+    private var photoRow: some View {
+        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 16))) {
+            PetAvatar(image: image, symbol: species.symbol, size: 96)
+                .overlay { if loadingPhoto { ProgressView() } }
+            VStack(alignment: .leading, spacing: 10) {
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Text(image == nil ? "Add photo" : "Change photo").font(.body.weight(.semibold)).frame(minHeight: 44)
+                }.disabled(readOnly).accessibilityIdentifier("pet.photo")
+                if image != nil {
+                    Button("Remove photo", role: .destructive) { image = nil; jpeg = nil; photoChanged = true; photoError = nil }
+                        .buttonStyle(.borderless).disabled(readOnly).frame(minHeight: 44).accessibilityIdentifier("pet.photo.remove")
+                }
+                if let photoError { Text(photoError).font(.footnote).foregroundStyle(.secondary) }
+            }
+            Spacer(minLength: 0)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+    /// The heading stays visible once the field is filled, which a placeholder would not.
+    private func detail(_ title: String, text: Binding<String>, id: String, axis: Axis = .horizontal) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.footnote).foregroundStyle(.secondary).accessibilityHidden(true)
+            TextField(title, text: text, prompt: Text(""), axis: axis).accessibilityIdentifier(id)
+        }.padding(.vertical, 2)
+    }
+    private func load(_ item: PhotosPickerItem) async {
+        loadingPhoto = true
+        defer { loadingPhoto = false; photoItem = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let encoded = await Task.detached(operation: { PetPhotoEncoder.jpeg(from: data) }).value,
+              let decoded = UIImage(data: encoded) else { photoError = "This photo could not be read."; return }
+        image = decoded
+        jpeg = encoded
+        photoChanged = true
+        photoError = nil
+    }
+    private func fill() {
+        guard !loaded else { return }
+        loaded = true
+        guard let profile else { return }
+        name = profile.name
+        species = profile.species
+        birthday = profile.birthday ?? .now
+        knownBirthday = profile.birthday != nil
+        vet = profile.vet ?? ""
+        vetPhone = profile.vetPhone ?? ""
+        microchip = profile.microchip ?? ""
+        insurance = profile.insurance ?? ""
+        notes = profile.notes ?? ""
+        image = events.petPhotos[profile.id]
+    }
+    private func save() {
+        var pet = profile ?? PetProfile(name: name, editedBy: events.caregiver)
+        pet.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        pet.species = species
+        pet.birthday = knownBirthday ? birthday : nil
+        pet.vet = cleaned(vet)
+        pet.vetPhone = cleaned(vetPhone)
+        pet.microchip = cleaned(microchip)
+        pet.insurance = cleaned(insurance)
+        pet.notes = cleaned(notes)
+        guard events.savePet(pet) else { return }
+        if photoChanged, !events.savePetPhoto(jpeg, petID: pet.id) { photoError = "This photo could not be saved."; return }
+        dismiss()
+    }
+    private func cleaned(_ value: String) -> String? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }

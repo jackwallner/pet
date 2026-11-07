@@ -18,7 +18,7 @@ One sentence: everyone caring for the dog sees what happened and what is next.
 
 ## V1 scope
 In:
-- Pet profile.
+- Pet profile, including one photo and plain vet, microchip, insurance and notes fields (tester feedback #13). The photo syncs as a JPEG capped at 180 KB in a `petPhoto` record's existing `payload`, so it needs no CloudKit schema change.
 - Four large buttons; one tap logs what, who and when. Dog: Potty, Meal, Walk, Meds. Cat, Rabbit: Meal, Litter, Meds, Play. Small pet, Bird, Other: Meal, Cleaning, Meds, Play. Fish, Reptile: Meal, Water, Cleaning, Meds.
 - Now view: the last of each, who did it, and the last successful sync time.
 - User-entered medications with given or skipped, actual time, and who.
@@ -26,7 +26,7 @@ In:
 - Correction history, CloudKit household sharing by link and QR, basic export.
 - One-page sitter sheet as a share-sheet PDF: a snapshot, stated plainly, for helpers on Android or without iCloud.
 
-Out: weight, emergency card, record photos, OCR, costs, breed data, preset vaccine or medical schedules, dosing, AI, widget, Watch, Android, lifetime plan.
+Out: weight, a dedicated emergency card, record photos, OCR, costs, breed data, preset vaccine or medical schedules, dosing, AI, widget, Watch, Android, lifetime plan.
 
 Chassis: `~/baby` for log, share and sync; `~/elderhub` for medication schedule logic.
 

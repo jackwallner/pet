@@ -2,6 +2,7 @@ import CloudKit
 import Combine
 import CoreData
 import Foundation
+import UIKit
 
 @MainActor
 final class EventStore: ObservableObject {
@@ -15,6 +16,8 @@ final class EventStore: ObservableObject {
     @Published private(set) var medications: [Medication] = []
     @Published private(set) var dueItems: [DueItem] = []
     @Published private(set) var events: [EventRecord] = []
+    @Published private(set) var petPhotos: [UUID: UIImage] = [:]
+    private var petPhotoBytes: [UUID: Data] = [:]
     @Published var selectedPetID: UUID?
     @Published var lastLogged: EventRecord?
     @Published var notificationMedicationID: UUID?
@@ -98,6 +101,7 @@ final class EventStore: ObservableObject {
         medications = current.medications
         dueItems = current.dueItems
         events = current.events
+        loadPhotos(Array(household?.records ?? []))
         if !pets.contains(where: { $0.id == selectedPetID }) { selectedPetID = pets.first?.id }
         awaitingShare = defaults.bool(forKey: "pendingShare")
         Reminders.schedule(store: self)
@@ -153,6 +157,15 @@ final class EventStore: ObservableObject {
         return Array(found.values)
     }
 
+    /// Decodes images only when the bytes changed, because reload runs on every log tap.
+    private func loadPhotos(_ records: [StoredRecord]) {
+        var bytes: [UUID: Data] = [:]
+        for photo in settings(records, category: PetPhoto.category, type: PetPhoto.self) { bytes[photo.id] = photo.jpeg }
+        guard bytes != petPhotoBytes else { return }
+        petPhotoBytes = bytes
+        petPhotos = bytes.compactMapValues { UIImage(data: $0) }
+    }
+
     private func ensureHousehold() -> Household {
         if let household { return household }
         let root = Household(context: context)
@@ -196,6 +209,13 @@ final class EventStore: ObservableObject {
         let saved = write(id: value.id, category: "pet", value: value)
         if saved { select(value.id) }
         return saved
+    }
+
+    /// Pass nil to remove the photo. It syncs like any other pet setting, last writer wins.
+    @discardableResult
+    func savePetPhoto(_ jpeg: Data?, petID: UUID) -> Bool {
+        guard canWrite, petID == pet?.id else { error = "This log is read-only."; return false }
+        return write(id: petID, category: PetPhoto.category, value: PetPhoto(id: petID, jpeg: jpeg, editedBy: caregiver))
     }
 
     func selectHousehold(_ root: Household) {
@@ -290,8 +310,15 @@ final class EventStore: ObservableObject {
     func seedDemo(pro: Bool) {
         guard pets.isEmpty else { if pro { setHouseholdExpiry(.now.addingTimeInterval(30 * 86400)); _ = markShared() }; return }
         caregiver = "Jack"
-        let profile = PetProfile(name: "Milo", birthday: Calendar.current.date(byAdding: .day, value: -84, to: .now), editedBy: caregiver)
+        var profile = PetProfile(name: "Milo", birthday: Calendar.current.date(byAdding: .day, value: -84, to: .now), editedBy: caregiver)
+        if LaunchOptions.contains("-DemoPhoto") {
+            profile.vet = "Maple Street Vet"
+            profile.vetPhone = "555-0142"
+            profile.microchip = "985 112 003 456 789"
+            profile.notes = "Dinner goes in the blue bowl."
+        }
         _ = savePet(profile)
+        if LaunchOptions.contains("-DemoPhoto") { _ = savePetPhoto(PetPhotoEncoder.demo(), petID: profile.id) }
         if pro { setHouseholdExpiry(.now.addingTimeInterval(30 * 86400)); _ = markShared() }
         let med = Medication(petID: profile.id, name: "Daily tablet", instructions: "Follow the veterinarian's instructions.",
                              reminderPhoneID: phoneID, reminderPhoneName: "Jack's iPhone", editedBy: caregiver)

@@ -26,11 +26,14 @@ enum LogExport {
 struct SitterSnapshot: Equatable {
     let title: String
     let lines: [String]
+    var photo: UIImage?
     static func build(pet: PetProfile, medications: [Medication], dueItems: [DueItem], events: [EventRecord],
-                      lastSync: Date?, now: Date = .now) -> SitterSnapshot {
+                      lastSync: Date?, now: Date = .now, photo: UIImage? = nil) -> SitterSnapshot {
         var lines = ["Snapshot: \(now.formatted(date: .abbreviated, time: .shortened))",
                      "Last successful sync: \(lastSync?.formatted(date: .abbreviated, time: .shortened) ?? "Unavailable")",
-                     "This PDF is a snapshot. Check with the household for updates.", "", "LAST LOGGED"]
+                     "This PDF is a snapshot. Check with the household for updates.", "", "ABOUT"]
+        lines += about(pet, now: now)
+        lines += ["", "LAST LOGGED"]
         for kind in pet.species.kinds {
             if let last = NowSummary.last(kind, petID: pet.id, events: events) {
                 lines.append("\(kind.rawValue): \(last.occurredAt.formatted(date: .abbreviated, time: .shortened)), \(last.performedBy)\(last.doseStatus.map { ", \($0.rawValue)" } ?? "")")
@@ -52,7 +55,17 @@ struct SitterSnapshot: Equatable {
             lines.append("\(item.name): \(time), \(item.intervalDays == 1 ? "every day" : "every \(item.intervalDays) days")")
         }
         lines += ["", AppConfig.disclaimer]
-        return SitterSnapshot(title: "\(pet.name)'s sitter sheet", lines: lines)
+        return SitterSnapshot(title: "\(pet.name)'s sitter sheet", lines: lines, photo: photo)
+    }
+    private static func about(_ pet: PetProfile, now: Date) -> [String] {
+        let age = pet.birthday.flatMap { PetAge.text(birthday: $0, now: now) }
+        var lines = [[pet.species.rawValue, age].compactMap { $0 }.joined(separator: ", ")]
+        let vet = [pet.vet, pet.vetPhone].compactMap { $0 }.joined(separator: ", ")
+        if !vet.isEmpty { lines.append("Vet: \(vet)") }
+        if let microchip = pet.microchip { lines.append("Microchip: \(microchip)") }
+        if let insurance = pet.insurance { lines.append("Insurance: \(insurance)") }
+        if let notes = pet.notes { lines.append(notes) }
+        return lines
     }
 }
 
@@ -65,7 +78,8 @@ enum SitterPDF {
     static func data(_ snapshot: SitterSnapshot) throws -> Data {
         let page = CGRect(x: 0, y: 0, width: 612, height: 792)
         let text = snapshot.lines.joined(separator: "\n")
-        let bodyRect = CGRect(x: 40, y: 100, width: 532, height: 640)
+        let photoRect = CGRect(x: 472, y: 36, width: 100, height: 100)
+        let bodyRect = snapshot.photo == nil ? CGRect(x: 40, y: 100, width: 532, height: 640) : CGRect(x: 40, y: 148, width: 532, height: 592)
         var size: CGFloat = 15
         func attributes(_ size: CGFloat) -> [NSAttributedString.Key: Any] {
             let paragraph = NSMutableParagraphStyle()
@@ -75,14 +89,24 @@ enum SitterPDF {
         while size > 8 && (text as NSString).boundingRect(with: CGSize(width: bodyRect.width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes(size), context: nil).height > bodyRect.height { size -= 0.5 }
         guard (text as NSString).boundingRect(with: CGSize(width: bodyRect.width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes(size), context: nil).height <= bodyRect.height else { throw PDFError.tooLong }
         var titleSize: CGFloat = 25
-        let titleRect = CGRect(x: 40, y: 40, width: 532, height: 52)
+        let titleRect = CGRect(x: 40, y: 40, width: snapshot.photo == nil ? 532 : 416, height: 52)
         while titleSize > 12 && (snapshot.title as NSString).boundingRect(with: CGSize(width: titleRect.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: [.font: UIFont.boldSystemFont(ofSize: titleSize)], context: nil).height > titleRect.height { titleSize -= 0.5 }
         guard (snapshot.title as NSString).boundingRect(with: CGSize(width: titleRect.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: [.font: UIFont.boldSystemFont(ofSize: titleSize)], context: nil).height <= titleRect.height else { throw PDFError.tooLong }
         return UIGraphicsPDFRenderer(bounds: page).pdfData { renderer in
             renderer.beginPage()
             (snapshot.title as NSString).draw(in: titleRect, withAttributes: [.font: UIFont.boldSystemFont(ofSize: titleSize), .foregroundColor: UIColor.black])
             (text as NSString).draw(in: bodyRect, withAttributes: attributes(size))
+            if let photo = snapshot.photo { draw(photo, filling: photoRect, in: renderer.cgContext) }
         }
+    }
+    private static func draw(_ photo: UIImage, filling rect: CGRect, in context: CGContext) {
+        guard photo.size.width > 0, photo.size.height > 0 else { return }
+        let scale = max(rect.width / photo.size.width, rect.height / photo.size.height)
+        let size = CGSize(width: photo.size.width * scale, height: photo.size.height * scale)
+        context.saveGState()
+        UIBezierPath(roundedRect: rect, cornerRadius: 12).addClip()
+        photo.draw(in: CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height))
+        context.restoreGState()
     }
     static func file(_ snapshot: SitterSnapshot) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(AppConfig.displayName)-sitter-sheet-\(UUID().uuidString.prefix(8)).pdf")

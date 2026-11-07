@@ -5,14 +5,22 @@ struct HistoryView: View {
     @State private var selected: EventRecord?
     @State private var add = false
     @State private var showAll = false
+    @State private var search = ""
     @Environment(\.dynamicTypeSize) private var typeSize
-    private var shown: [EventRecord] { showAll ? events.events.filter { $0.petID == events.pet?.id } : events.visibleEvents }
+    private var query: String { search.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var shown: [EventRecord] {
+        let entries = showAll ? events.events.filter { $0.petID == events.pet?.id } : events.visibleEvents
+        return query.isEmpty ? entries : entries.filter(matches)
+    }
     var body: some View {
         List {
             if events.pet != nil {
                 Section { Toggle("Correction history", isOn: $showAll).accessibilityIdentifier("history.corrections") }
             }
-            if shown.isEmpty { ContentUnavailableView("Your log starts here", systemImage: "clock") }
+            if shown.isEmpty {
+                if query.isEmpty { ContentUnavailableView("Your log starts here", systemImage: "clock") }
+                else { ContentUnavailableView.search(text: query) }
+            }
             ForEach(shown) { event in
                 Button { selected = event } label: {
                     VStack(alignment: .leading, spacing: 6) {
@@ -31,11 +39,15 @@ struct HistoryView: View {
             }
         }
         .biscuitList().navigationTitle("History")
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Activity, person, note")
         .toolbar {
             if events.pet != nil { ToolbarItem(placement: .topBarTrailing) { Button { add = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add an earlier entry").disabled(!events.canWrite) } }
         }
         .sheet(item: $selected) { event in NavigationStack { CorrectionView(event: event) } }
         .sheet(isPresented: $add) { NavigationStack { EarlierEntryView() } }
+    }
+    private func matches(_ event: EventRecord) -> Bool {
+        [eventTitle(event), event.kind.rawValue, event.performedBy, event.note].contains { $0.localizedStandardContains(query) }
     }
     private func eventTitle(_ event: EventRecord) -> String {
         if let id = event.medicationID, let med = events.medications.first(where: { $0.id == id }) {

@@ -7,7 +7,7 @@ Verify this against the configured RevenueCat SDK and Apple's current form befor
 - Usage data: product interaction (counts and dates for opens, paywalls, conversion, logs and invitations), analytics.
 - Diagnostics: disclose SDK diagnostics if enabled by the final RevenueCat configuration.
 - Tracking: the app does not request tracking authorization or use an advertising identifier.
-- Pet records and entered text: local files and optional user-controlled CloudKit sharing. These are outside custom analytics attributes.
+- Pet records, pet photos and entered text: local files and optional user-controlled CloudKit sharing. These are outside custom analytics attributes.
 - Notifications: local notification permission, outside analytics attributes.
 
 Custom measurement values contain only counts, dates and fixed product/surface identifiers.

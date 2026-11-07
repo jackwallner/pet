@@ -201,6 +201,58 @@ final class JourneyTests: XCTestCase {
         app.terminate()
     }
 
+    func testPetPhotoDetailsAndHistorySearch() {
+        let app = app(["-SeedDemo", "-DemoPro", "-DemoPhoto"])
+        let header = app.buttons["now.pet"]
+        XCTAssertTrue(header.waitForExistence(timeout: 15))
+        shot(app, "pet-now-photo")
+        XCTAssertFalse(app.staticTexts["Add photo"].exists)
+        header.tap()
+        XCTAssertTrue(app.buttons["pet.photo.remove"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["pet.photo"].exists)
+        XCTAssertTrue(app.links["pet.call"].exists || app.buttons["pet.call"].exists)
+        shot(app, "pet-editor-photo")
+        app.swipeUp()
+        let insurance = app.textFields["pet.insurance"]
+        XCTAssertTrue(insurance.waitForExistence(timeout: 5))
+        insurance.tap(); insurance.typeText("Acme Pet")
+        shot(app, "pet-editor-details")
+        app.buttons["pet.save"].tap()
+        XCTAssertTrue(header.waitForExistence(timeout: 5))
+        // Removing the photo is saved, and Now offers to add one again.
+        header.tap()
+        XCTAssertTrue(app.buttons["pet.photo.remove"].waitForExistence(timeout: 5))
+        app.buttons["pet.photo.remove"].tap()
+        XCTAssertFalse(app.buttons["pet.photo.remove"].waitForExistence(timeout: 1))
+        app.buttons["pet.save"].tap()
+        XCTAssertTrue(app.staticTexts["Add photo"].waitForExistence(timeout: 5))
+        shot(app, "pet-now-no-photo")
+        header.tap()
+        app.swipeUp()
+        XCTAssertEqual(app.textFields["pet.insurance"].value as? String, "Acme Pet")
+        app.buttons["Close"].tap()
+        tapTab(app, "History")
+        XCTAssertTrue(app.buttons["history.entry"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(identifier: "history.entry").count, 4)
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap(); search.typeText("walk")
+        let oneResult = NSPredicate { _, _ in app.buttons.matching(identifier: "history.entry").count == 1 }
+        wait(for: [XCTNSPredicateExpectation(predicate: oneResult, object: nil)], timeout: 5)
+        shot(app, "history-search")
+        search.typeText("zzz")
+        XCTAssertFalse(app.buttons["history.entry"].firstMatch.waitForExistence(timeout: 1))
+        app.terminate()
+    }
+
+    func testSitterSheetShowsPetPhoto() {
+        let app = app(["-SeedDemo", "-DemoPro", "-DemoPhoto", "-ScreenshotRoute", "sitter"])
+        XCTAssertTrue(app.buttons["Share PDF"].waitForExistence(timeout: 15))
+        Thread.sleep(forTimeInterval: 0.7)
+        shot(app, "sitter-photo")
+        app.terminate()
+    }
+
     func testSettingsShowsVersionAndBuild() {
         let app = app(["-SeedDemo"])
         XCTAssertTrue(app.buttons["log.meal"].waitForExistence(timeout: 15))
@@ -246,7 +298,7 @@ final class JourneyTests: XCTestCase {
         }
     }
     func testLargeTextAndSmallWidthScreens() {
-        for route in ["now", "history", "care", "settings", "medication", "dose", "household", "paywall"] {
+        for route in ["now", "history", "care", "settings", "pets", "pet", "medication", "dose", "household", "paywall"] {
             // The system setting, so sheets get large text too.
             let app = app(["-SeedDemo", "-DemoPro", "-LargeText", "-SmallPhone", "-ScreenshotRoute", route, "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
             if route == "paywall" { XCTAssertTrue(app.buttons["plan.yearly"].waitForExistence(timeout: 20)) }

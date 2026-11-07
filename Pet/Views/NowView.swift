@@ -7,11 +7,13 @@ struct NowView: View {
     @Environment(\.requestReview) private var requestReview
     @State private var meds = false
     @State private var addPet = false
+    @State private var editPet = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 LapseBanner()
                 if let pet = events.pet {
+                    PetHeader(pet: pet) { editPet = true }
                     if events.isSharedLog { SyncLine(sync: events.sync) }
                     if let medication = events.petMedications.first(where: { $0.id == events.notificationMedicationID }) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -60,15 +62,43 @@ struct NowView: View {
         }
         .sheet(isPresented: $meds) { NavigationStack { MedicationsView().toolbar { ToolbarItem(placement: .cancellationAction) { DismissButton() } } } }
         .sheet(isPresented: $addPet) { NavigationStack { PetEditor(profile: nil) } }
+        .sheet(isPresented: $editPet) { NavigationStack { PetEditor(profile: events.pet) } }
     }
     private func askForRatingSoon() {
         guard !LaunchOptions.contains("-UITesting"), RatingAsk.isDue() else { return }
         Task {
             try? await Task.sleep(for: .seconds(3))
-            guard !meds, !addPet, RatingAsk.isDue() else { return }
+            guard !meds, !addPet, !editPet, RatingAsk.isDue() else { return }
             RatingAsk.markAsked()
             requestReview()
         }
+    }
+}
+
+private struct PetHeader: View {
+    let pet: PetProfile
+    let action: () -> Void
+    @EnvironmentObject private var events: EventStore
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var image: UIImage? { events.petPhotos[pet.id] }
+    private var age: String? { pet.birthday.flatMap { PetAge.text(birthday: $0) } }
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                // Beside the avatar, large text breaks "12 weeks old" one word per line.
+                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 14))) {
+                    PetAvatar(image: image, symbol: pet.species.symbol, size: 72)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(pet.species.rawValue).font(.headline)
+                        if let age { Text(age).font(.subheadline).foregroundStyle(.secondary) }
+                        if image == nil && events.canWrite { Text("Add photo").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accent) }
+                    }.fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary).accessibilityHidden(true)
+            }.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityIdentifier("now.pet")
     }
 }
 

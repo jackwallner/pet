@@ -333,6 +333,89 @@ final class DomainTests: XCTestCase {
         XCTAssertTrue(pdf.string?.contains("Milo") == true)
         XCTAssertTrue(pdf.string?.contains("Jack") == true)
     }
+    func testPetPhotoSavesReplacesAndRemovesAcrossStores() throws {
+        let id = store.pet!.id
+        let first = try XCTUnwrap(PetPhotoEncoder.demo())
+        XCTAssertNil(store.petPhotos[id])
+        XCTAssertTrue(store.savePetPhoto(first, petID: id))
+        XCTAssertNotNil(store.petPhotos[id])
+        // A second phone reads the same records.
+        XCTAssertNotNil(EventStore(persistence: persistence, defaults: defaults).petPhotos[id])
+        XCTAssertTrue(store.savePetPhoto(nil, petID: id))
+        XCTAssertNil(store.petPhotos[id])
+        XCTAssertEqual(store.pets.count, 1, "A photo record must never read as a pet")
+        XCTAssertFalse(store.savePetPhoto(first, petID: UUID()), "Only the pet on screen can change")
+        XCTAssertNil(EventStore(persistence: persistence, defaults: defaults).petPhotos[id])
+    }
+    func testNewestPetPhotoRecordWinsWhenTwoPhonesAddOne() throws {
+        let id = store.pet!.id
+        let root = try XCTUnwrap(store.household)
+        for (jpeg, age) in [(try XCTUnwrap(PetPhotoEncoder.demo()), -60.0), (nil, 0.0)] as [(Data?, Double)] {
+            let record = StoredRecord(context: store.context)
+            record.id = id
+            record.category = PetPhoto.category
+            record.payload = try JSONEncoder().encode(PetPhoto(id: id, jpeg: jpeg, editedBy: "Sam"))
+            record.updatedAt = Date.now.addingTimeInterval(age)
+            record.household = root
+        }
+        try store.context.save()
+        store.reload()
+        XCTAssertNil(store.petPhotos[id])
+    }
+    func testPetPhotoEncoderStaysInsideOneRecord() throws {
+        let size = CGSize(width: 3000, height: 2000)
+        let noise = UIGraphicsImageRenderer(size: size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).pngData { context in
+            for _ in 0..<40_000 {
+                UIColor(hue: .random(in: 0...1), saturation: 1, brightness: .random(in: 0...1), alpha: 1).setFill()
+                context.fill(CGRect(x: .random(in: 0...size.width), y: .random(in: 0...size.height), width: 12, height: 12))
+            }
+        }
+        let jpeg = try XCTUnwrap(PetPhotoEncoder.jpeg(from: noise))
+        XCTAssertLessThanOrEqual(jpeg.count, PetPhotoEncoder.maxBytes)
+        let image = try XCTUnwrap(UIImage(data: jpeg))
+        XCTAssertLessThanOrEqual(max(image.size.width, image.size.height), 1000)
+        XCTAssertGreaterThanOrEqual(max(image.size.width, image.size.height), 400)
+        XCTAssertNil(PetPhotoEncoder.jpeg(from: Data("not an image".utf8)))
+    }
+    func testPetSavedBeforeDetailsExistedStillDecodes() throws {
+        let old = #"{"id":"6F9619FF-8B86-D011-B42D-00CF4FC964FF","name":"Rex","species":"Dog","createdAt":0,"editedAt":0,"editedBy":"Jack"}"#
+        let pet = try JSONDecoder().decode(PetProfile.self, from: Data(old.utf8))
+        XCTAssertEqual(pet.name, "Rex")
+        XCTAssertNil(pet.vet)
+        XCTAssertNil(pet.notes)
+    }
+    func testPetAgeReadsPlainly() {
+        let now = day(2026, 11, 7)
+        func age(_ y: Int, _ m: Int, _ d: Int) -> String? { PetAge.text(birthday: day(y, m, d), now: now, calendar: calendar) }
+        XCTAssertEqual(age(2026, 11, 7), "Born today")
+        XCTAssertEqual(age(2026, 11, 6), "1 day old")
+        XCTAssertEqual(age(2026, 10, 31), "7 days old")
+        XCTAssertEqual(age(2026, 8, 15), "12 weeks old")
+        XCTAssertEqual(age(2026, 2, 7), "9 months old")
+        XCTAssertEqual(age(2025, 10, 7), "13 months old")
+        XCTAssertEqual(age(2024, 11, 7), "2 years old")
+        XCTAssertNil(age(2026, 11, 8))
+    }
+    func testSitterSheetCarriesPhotoAndDetailsOnOnePage() throws {
+        var pet = store.pet!
+        pet.vet = "Maple Street Vet"
+        pet.vetPhone = "555-0142"
+        pet.microchip = "985112003456789"
+        pet.insurance = "Acme Pet"
+        pet.notes = "Dinner goes in the blue bowl."
+        let plain = SitterSnapshot.build(pet: store.pet!, medications: [], dueItems: [], events: [], lastSync: nil)
+        XCTAssertFalse(plain.lines.contains { $0.hasPrefix("Vet:") })
+        XCTAssertTrue(plain.lines.contains("Dog"))
+        let image = try XCTUnwrap(UIImage(data: try XCTUnwrap(PetPhotoEncoder.demo())))
+        let full = SitterSnapshot.build(pet: pet, medications: [med()], dueItems: [], events: [], lastSync: nil, photo: image)
+        let data = try SitterPDF.data(full)
+        let pdf = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertEqual(pdf.pageCount, 1)
+        for text in ["Maple Street Vet, 555-0142", "Microchip: 985112003456789", "Insurance: Acme Pet", "blue bowl"] {
+            XCTAssertTrue(pdf.string?.contains(text) == true, text)
+        }
+        XCTAssertGreaterThan(data.count, try SitterPDF.data(SitterSnapshot(title: full.title, lines: full.lines)).count + 1000)
+    }
     func testOversizedSitterSheetFailsExplicitly() {
         let snapshot = SitterSnapshot(title: "Sheet", lines: Array(repeating: String(repeating: "long ", count: 60), count: 100))
         XCTAssertThrowsError(try SitterPDF.data(snapshot))
