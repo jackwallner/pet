@@ -10,7 +10,7 @@ struct PetsView: View {
             ForEach(events.pets) { pet in
                 Button { events.select(pet.id); editing = pet } label: {
                     HStack {
-                        Label(pet.name, systemImage: pet.species == .dog ? "dog" : "cat").foregroundStyle(.primary)
+                        Label(pet.name, systemImage: pet.species.symbol).foregroundStyle(.primary)
                         Spacer()
                         if events.pet?.id == pet.id { Image(systemName: "checkmark") }
                     }.padding(.vertical, 8)
@@ -27,6 +27,34 @@ struct PetsView: View {
     }
 }
 
+struct SpeciesPicker: View {
+    @Binding var selection: Species
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .subheadline) private var iconWidth = 28
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 1 : 2), spacing: 8) {
+            ForEach(Species.allCases) { species in
+                let selected = species == selection
+                Button { selection = species } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: species.symbol).frame(width: iconWidth).accessibilityHidden(true)
+                        Text(species.rawValue)
+                    }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(selected ? Theme.buttonInk : Color.primary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .background(selected ? Theme.accent : Theme.background, in: RoundedRectangle(cornerRadius: 10))
+                        .contentShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("species.\(species.rawValue)")
+            }
+        }
+    }
+}
+
 struct PetEditor: View {
     let profile: PetProfile?
     @EnvironmentObject private var events: EventStore
@@ -40,7 +68,7 @@ struct PetEditor: View {
         Form {
             Section {
                 TextField("Pet name", text: $name).accessibilityIdentifier("pet.name")
-                Picker("Pet", selection: $species) { ForEach(Species.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
+                SpeciesPicker(selection: $species)
                 Toggle("Birthday", isOn: $knownBirthday)
                 if knownBirthday { DatePicker("Born", selection: $birthday, in: ...Date.now, displayedComponents: .date) }
             }

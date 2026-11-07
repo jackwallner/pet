@@ -1,6 +1,6 @@
-# Biscuit
+# Biscuit: Critter Log
 
-An iPhone log for two people caring for one dog. Cats are supported.
+An iPhone log for two people caring for one pet: dog, cat, rabbit, small pet, bird, fish, reptile or other.
 
 Open `Pet.xcodeproj` after `xcodegen generate`. The `Pet` scheme includes
 unit tests, UI tests and the local StoreKit catalog.

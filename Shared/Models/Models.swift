@@ -1,13 +1,32 @@
 import Foundation
 
 enum Species: String, Codable, CaseIterable, Identifiable, Sendable {
-    case dog = "Dog", cat = "Cat"
+    case dog = "Dog", cat = "Cat", rabbit = "Rabbit", smallPet = "Small pet", bird = "Bird", fish = "Fish", reptile = "Reptile", other = "Other"
     var id: String { rawValue }
-    var kinds: [EventKind] { self == .dog ? [.potty, .meal, .walk, .meds] : [.meal, .litter, .meds, .play] }
+    var kinds: [EventKind] {
+        switch self {
+        case .dog: [.potty, .meal, .walk, .meds]
+        case .cat, .rabbit: [.meal, .litter, .meds, .play]
+        case .smallPet, .bird, .other: [.meal, .cleaning, .meds, .play]
+        case .fish, .reptile: [.meal, .water, .cleaning, .meds]
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .dog: "dog"
+        case .cat: "cat"
+        case .rabbit: "hare"
+        case .smallPet: "pawprint"
+        case .bird: "bird"
+        case .fish: "fish"
+        case .reptile: "lizard"
+        case .other: "ellipsis.circle"
+        }
+    }
 }
 
 enum EventKind: String, Codable, CaseIterable, Identifiable, Sendable {
-    case potty = "Potty", meal = "Meal", walk = "Walk", meds = "Meds", litter = "Litter", play = "Play", due = "Due item"
+    case potty = "Potty", meal = "Meal", walk = "Walk", meds = "Meds", litter = "Litter", play = "Play", cleaning = "Cleaning", water = "Water", due = "Due item"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -17,6 +36,8 @@ enum EventKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .meds: "pills"
         case .litter: "tray"
         case .play: "tennisball"
+        case .cleaning: "sparkles"
+        case .water: "water.waves"
         case .due: "checkmark.circle"
         }
     }

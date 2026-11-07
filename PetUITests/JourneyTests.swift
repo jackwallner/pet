@@ -87,6 +87,39 @@ final class JourneyTests: XCTestCase {
         app.terminate()
     }
 
+    func testOnboardingFishGetsAquariumButtons() throws {
+        let app = app(["-Onboarding"])
+        let name = app.textFields["onboarding.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 15))
+        name.tap(); name.typeText("Jack")
+        let pet = app.textFields["onboarding.pet"]
+        pet.tap(); pet.typeText("Bubbles")
+        app.keyboards.buttons["Return"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Biscuit: Critter Log"].exists)
+        for species in ["Dog", "Cat", "Rabbit", "Small pet", "Bird", "Fish", "Reptile", "Other"] {
+            XCTAssertTrue(app.buttons["species.\(species)"].exists, species)
+        }
+        app.buttons["species.Fish"].tap()
+        XCTAssertTrue(app.buttons["species.Fish"].isSelected)
+        shot(app, "onboarding-species")
+        app.buttons["onboarding.primary"].tap()
+        XCTAssertTrue(app.buttons["onboarding.free"].waitForExistence(timeout: 15))
+        app.buttons["onboarding.free"].tap()
+        XCTAssertTrue(app.buttons["log.water"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["log.cleaning"].exists)
+        XCTAssertFalse(app.buttons["log.walk"].exists)
+        app.buttons["log.water"].tap()
+        XCTAssertTrue(app.buttons["log.undo"].waitForExistence(timeout: 5))
+        shot(app, "now-fish")
+        tapTab(app, "Settings")
+        let fullName = app.staticTexts["Biscuit: Critter Log"]
+        for _ in 0..<4 where !fullName.isHittable { app.swipeUp() }
+        XCTAssertTrue(fullName.isHittable)
+        shot(app, "settings-name")
+        app.terminate()
+    }
+
     func testProSitterExportExtraPetAndRecurringItemFlow() throws {
         let app = app(["-SeedDemo", "-DemoPro"])
         XCTAssertTrue(app.buttons["log.meal"].waitForExistence(timeout: 15))
@@ -100,7 +133,7 @@ final class JourneyTests: XCTestCase {
         app.buttons["settings.pets"].tap()
         app.buttons["Add a pet"].tap()
         app.textFields["pet.name"].tap(); app.textFields["pet.name"].typeText("Luna")
-        app.segmentedControls.buttons["Cat"].tap()
+        app.buttons["species.Cat"].tap()
         app.buttons["pet.save"].tap()
         XCTAssertTrue(app.buttons["Luna"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()

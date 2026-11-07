@@ -12,14 +12,14 @@ Two people raising one dog, starting with a new puppy, because puppy is the only
 One sentence: everyone caring for the dog sees what happened and what is next.
 
 ## Name and store
-- Title `Biscuit: Puppy & Dog Log`, home screen `Biscuit`. Rename if taken when the App Store Connect record is created.
+- Title `Biscuit: Critter Log` (tester feedback #12, was `Biscuit: Puppy & Dog Log`), home screen `Biscuit`. Rename if taken when the App Store Connect record is created.
 - Xcode project/scheme `Pet`, slug and sim lease owner `pet`, bundle `com.jackwallner.pet`, App Group `group.com.jackwallner.pet`, iCloud `iCloud.com.jackwallner.pet`.
 - Subtitle around pet diary and med tracking. Keyword field: pet log, puppy tracker, puppy schedule, dog medication tracker, pet health. Do not lead on pet tracker, dog tracker or cat tracker (GPS intent). Dog log and puppy tracker are bonus traffic, because DogLog holds them.
 
 ## V1 scope
 In:
 - Pet profile.
-- Four large buttons; one tap logs what, who and when. Dog: Potty, Meal, Walk, Meds. Cat: Meal, Litter, Meds, Play.
+- Four large buttons; one tap logs what, who and when. Dog: Potty, Meal, Walk, Meds. Cat, Rabbit: Meal, Litter, Meds, Play. Small pet, Bird, Other: Meal, Cleaning, Meds, Play. Fish, Reptile: Meal, Water, Cleaning, Meds.
 - Now view: the last of each, who did it, and the last successful sync time.
 - User-entered medications with given or skipped, actual time, and who.
 - User-entered recurring due items with local reminders.

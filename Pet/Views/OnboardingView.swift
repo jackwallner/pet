@@ -17,12 +17,12 @@ struct OnboardingView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
-                        Text(AppConfig.displayName).font(.largeTitle.bold())
+                        Text(AppConfig.fullName).font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
                         VStack(spacing: 16) {
                             TextField("Your name", text: $caregiver).textContentType(.givenName).focused($field, equals: .name).accessibilityIdentifier("onboarding.name")
                             Divider()
                             TextField("Pet name", text: $name).focused($field, equals: .pet).accessibilityIdentifier("onboarding.pet")
-                            Picker("Pet", selection: $species) { ForEach(Species.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
+                            SpeciesPicker(selection: $species)
                         }.padding(20).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16))
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Free").font(.headline)

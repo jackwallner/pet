@@ -2,6 +2,7 @@ import Foundation
 
 enum AppConfig {
     static let displayName = "Biscuit"
+    static let fullName = "Biscuit: Critter Log"
     static let productionRevenueCatKey = "appl_mKdSNRaSbsfMyXKhWQwAMKMbnEx"
     static let entitlement = "pro"
     static let offering = "default"

@@ -92,6 +92,21 @@ final class DomainTests: XCTestCase {
         for kind in Species.dog.kinds { XCTAssertTrue(store.log(kind)) }
         XCTAssertEqual(store.visibleEvents.count, 4)
     }
+    func testEverySpeciesHasFourButtonsIncludingMealAndMeds() {
+        XCTAssertEqual(Species.allCases.count, 8)
+        for species in Species.allCases {
+            XCTAssertEqual(Set(species.kinds).count, 4, species.rawValue)
+            XCTAssertTrue(species.kinds.contains(.meal), species.rawValue)
+            XCTAssertTrue(species.kinds.contains(.meds), species.rawValue)
+        }
+    }
+    func testNewSpeciesRoundTripsAndExistingStoredPetsStillDecode() throws {
+        let fish = PetProfile(name: "Bubbles", species: .fish, editedBy: "Jack")
+        let decoded = try JSONDecoder().decode(PetProfile.self, from: JSONEncoder().encode(fish))
+        XCTAssertEqual(decoded.species, .fish)
+        XCTAssertEqual(Species(rawValue: "Dog"), .dog)
+        XCTAssertEqual(Species(rawValue: "Cat"), .cat)
+    }
     func testPaidExtraPetThenLapsePreservesViewAndFirstPetLogging() {
         store.setHouseholdExpiry(.now.addingTimeInterval(86400))
         XCTAssertTrue(store.savePet(PetProfile(name: "Luna", species: .cat, editedBy: "Jack")))
