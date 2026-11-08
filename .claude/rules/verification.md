@@ -15,7 +15,7 @@ On GitHub's Macs two tests skip: the StoreKit purchase test stalls and notificat
 
 Debug flags: `-SeedDemo`, `-DemoPro`, `-Onboarding`, `-OnboardingTrial`, `-EmptyLog`,
 `-UITesting`, `-SimPartner`, `-ReminderProbe`, `-NoCloudKit`, `-Appearance light|dark`, `-LargeText`, `-SmallPhone`,
-`-ScreenshotRoute <route>`, `-PaywallSnapshot monthly|yearly`, `-SuggestionSamples`, `-DemoPhoto` (with `-SeedDemo`: a drawn pet photo and filled details).
+`-ScreenshotRoute <route>`, `-PaywallSnapshot monthly|yearly`, `-SuggestionSamples`, `-DemoPhoto` (with `-SeedDemo`: a drawn pet photo and filled details), `-DemoSynced` (a recent sync time, for store screenshots).
 Debug builds count as TestFlight, so Settings shows Suggestions: never use a debug Settings shot as an App Store screenshot.
 `-UITesting` uses a new in-memory log; normal local launches persist the log.
 

@@ -1,6 +1,8 @@
-# Draft App Store privacy label
+# App Store privacy label
 
-Verify this against the configured RevenueCat SDK and Apple's current form before submission.
+Published in App Store Connect (checked 2026-11-08): Product Interaction (analytics), Purchase History (app functionality, analytics) and User ID (app functionality), none linked to identity and none used for tracking. Pet photos and entered records stay on the device and in the user's own iCloud, so they are not collected data.
+
+The draft it was built from:
 
 - Purchases: purchase history, linked to the RevenueCat app user identifier, app functionality and analytics.
 - Identifiers: RevenueCat app user identifier and SDK device identifiers, app functionality and analytics.

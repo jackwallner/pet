@@ -10,7 +10,7 @@ One pet, solo logging, full history, entered reminders and CSV export. Correctio
 HOUSEHOLD
 Share a log by iCloud invitation link or QR code, add extra pets and create a one-page sitter sheet PDF. The owner subscribes, and everyone joining is covered. Monthly and yearly plans each offer a 7-day free trial to eligible subscribers. Plans renew automatically unless canceled through App Store Settings.
 
-Live household sharing requires iPhones and iCloud. Helpers on Android can receive a sitter sheet PDF snapshot. A disconnected phone displays stale status. Medication reminders belong to one chosen iPhone and open Now so you can check the last dose and sync time.
+Live household sharing requires iPhones and iCloud. Helpers without an iPhone can receive a sitter sheet PDF snapshot. A disconnected phone displays stale status. Medication reminders belong to one chosen iPhone and open Now so you can check the last dose and sync time.
 
 Biscuit is a record keeper. Your veterinarian directs your pet's care.
 

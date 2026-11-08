@@ -15,12 +15,17 @@ final class CloudSyncState: ObservableObject {
     @Published private(set) var connected = true
     @Published private(set) var problem: String?
     let cloudEnabled: Bool
+    private var demoSynced = false
     private let defaults: UserDefaults
     private let monitor = NWPathMonitor()
     init(defaults: UserDefaults, cloudEnabled: Bool) {
         self.defaults = defaults
         self.cloudEnabled = cloudEnabled
         lastSynced = defaults.object(forKey: "lastCloudSync") as? Date
+        #if DEBUG
+        // Store screenshots run without an iCloud account; show a recent download instead of the stale banner.
+        if LaunchOptions.contains("-DemoSynced") { demoSynced = true; lastSynced = .now.addingTimeInterval(-60) }
+        #endif
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in self?.connected = path.status == .satisfied }
         }
@@ -37,6 +42,7 @@ final class CloudSyncState: ObservableObject {
         }
     }
     func stale(at now: Date) -> Bool {
-        !cloudEnabled || problem != nil || SyncFreshness.isStale(lastSuccess: lastSynced, connected: connected, now: now)
+        if demoSynced { return false }
+        return !cloudEnabled || problem != nil || SyncFreshness.isStale(lastSuccess: lastSynced, connected: connected, now: now)
     }
 }

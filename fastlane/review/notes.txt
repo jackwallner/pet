@@ -1,0 +1,22 @@
+Biscuit is a shared care log for a pet: meals, walks, potty breaks, litter and medications, each saved with the person and time. There is no account of any kind, so no demo account is needed.
+
+FRESH INSTALL
+1. Enter your name and a pet name, pick the animal, tap Continue.
+2. The Household screen offers the subscription with a 7-day free trial. Tap Get Started below the button to continue free.
+3. Now shows four large log buttons. One tap logs the entry with your name and the time. Undo, corrections and deletions add a new entry that names the old one, so history is never rewritten.
+4. History lists every entry and correction. Care holds user-entered medications and recurring items with local reminders. Settings has export (CSV) and the household options.
+
+FREE AND PAID
+Free: one pet, solo logging, full history, reminders and export. Household subscription (monthly or yearly, 7-day free trial on both): sharing with other iPhones through iCloud, extra pets, and a one-page sitter sheet PDF. The owner subscribes; people who join the household pay nothing and never see a purchase screen. History and export stay available after a subscription ends.
+
+SHARING
+Settings > Household > Invite (after subscribing) prepares an iCloud share and shows a link and QR code. The second iPhone joins from the link, or from Join a household on the first screen. Testing a join needs a second iPhone signed in to a different iCloud account.
+
+MEDICATIONS
+Medications and doses are entered by the user. The app gives no dosing, diagnosis or treatment advice and states that the veterinarian directs care. A medication reminder opens Now, which shows the last recorded dose, who gave it and when the log last synced.
+
+EXTERNAL SERVICES
+Apple iCloud (CloudKit) stores and shares the household log. StoreKit handles the subscriptions, and RevenueCat checks subscription status. There is no developer server, account system, advertising or AI.
+
+REGIONS
+The app works the same in every region.
