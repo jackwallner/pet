@@ -92,6 +92,15 @@ final class DomainTests: XCTestCase {
         for kind in Species.dog.kinds { XCTAssertTrue(store.log(kind)) }
         XCTAssertEqual(store.visibleEvents.count, 4)
     }
+    func testOnboardingAgainAfterQuittingOnThePaywallContinues() {
+        // setUp already saved Milo, as onboarding does before the paywall.
+        XCTAssertTrue(store.saveOnboardingPet(PetProfile(name: "Milo", editedBy: "Jack")))
+        XCTAssertNil(store.error)
+        XCTAssertEqual(store.pets.map(\.name), ["Milo"])
+        let fresh = EventStore(persistence: Persistence(cloudKit: false, inMemory: true), defaults: UserDefaults(suiteName: "pet.tests.\(UUID())")!)
+        XCTAssertTrue(fresh.saveOnboardingPet(PetProfile(name: "Luna", species: .cat, editedBy: "Sam")))
+        XCTAssertEqual(fresh.pets.map(\.name), ["Luna"])
+    }
     func testEverySpeciesHasFourButtonsIncludingMealAndMeds() {
         XCTAssertEqual(Species.allCases.count, 8)
         for species in Species.allCases {
