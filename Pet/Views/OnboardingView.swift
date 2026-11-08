@@ -39,7 +39,7 @@ struct OnboardingView: View {
                     OnboardingFooter(title: "Continue", disabled: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || caregiver.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                         events.caregiver = caregiver
                         let profile = PetProfile(name: name.trimmingCharacters(in: .whitespacesAndNewlines), species: species, editedBy: caregiver)
-                        if events.savePet(profile) { trial = true }
+                        if events.saveOnboardingPet(profile) { trial = true }
                     }
                 }
                 .sheet(isPresented: $joining) { NavigationStack { JoinView() } }

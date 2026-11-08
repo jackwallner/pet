@@ -211,6 +211,15 @@ final class EventStore: ObservableObject {
         return saved
     }
 
+    /// Onboarding adds the first pet. A log that already has one (the app quit on the paywall,
+    /// or iCloud brought the log back after a reinstall) keeps it, so Continue never dead-ends
+    /// on the free pet limit or adds a pet to a joined household.
+    @discardableResult
+    func saveOnboardingPet(_ value: PetProfile) -> Bool {
+        guard pets.isEmpty else { return true }
+        return savePet(value)
+    }
+
     /// Pass nil to remove the photo. It syncs like any other pet setting, last writer wins.
     @discardableResult
     func savePetPhoto(_ jpeg: Data?, petID: UUID) -> Bool {
