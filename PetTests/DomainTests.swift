@@ -438,6 +438,17 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(pet.name, "Rex")
         XCTAssertNil(pet.vet)
         XCTAssertNil(pet.notes)
+        XCTAssertNil(pet.sitters)
+    }
+    func testSittersSaveWithThePetAndDialOnlyRealNumbers() throws {
+        var pet = try XCTUnwrap(store.pet)
+        pet.sitters = [SitterContact(name: "Sam", phone: "(555) 017-7", note: "Weekends"), SitterContact(name: "Ana")]
+        XCTAssertTrue(store.savePet(pet))
+        let saved = try XCTUnwrap(store.pets.first { $0.id == pet.id }?.sitters)
+        XCTAssertEqual(saved.map(\.name), ["Sam", "Ana"])
+        XCTAssertEqual(saved[0].callURL?.absoluteString, "tel:5550177")
+        XCTAssertNil(saved[1].callURL)
+        XCTAssertNil(SitterContact.callURL("12"))
     }
     func testPetAgeReadsPlainly() {
         let now = day(2026, 11, 7)

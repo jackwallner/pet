@@ -69,6 +69,8 @@ struct PetProfile: Codable, Identifiable, Equatable, Sendable {
     var microchip: String?
     var insurance: String?
     var notes: String?
+    /// People who could look after the pet. Nil until the first one is added.
+    var sitters: [SitterContact]?
     /// Nil until someone customizes the buttons, so the species defaults apply.
     var logButtons: [LogButtonSetting]?
 
@@ -89,6 +91,19 @@ struct LogButtonSetting: Codable, Identifiable, Equatable, Sendable {
     let kind: EventKind
     var shown: Bool
     var id: String { kind.id }
+}
+
+struct SitterContact: Codable, Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var name: String
+    var phone: String?
+    var note: String?
+    /// Nil when the number has too few digits to dial.
+    var callURL: URL? { SitterContact.callURL(phone) }
+    static func callURL(_ phone: String?) -> URL? {
+        let digits = (phone ?? "").filter { $0.isNumber || $0 == "+" }
+        return digits.count < 3 ? nil : URL(string: "tel:\(digits)")
+    }
 }
 
 /// One pet's photo, in its own record so saving a pet's name never rewrites the image.

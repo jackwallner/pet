@@ -18,7 +18,7 @@ One sentence: everyone caring for the dog sees what happened and what is next.
 
 ## V1 scope
 In:
-- Pet profile, including one photo and plain vet, microchip, insurance and notes fields (tester feedback #13). The photo syncs as a JPEG capped at 180 KB in a `petPhoto` record's existing `payload`, so it needs no CloudKit schema change.
+- Pet profile, including one photo and plain vet, microchip, insurance and notes fields (tester feedback #13). The photo syncs as a JPEG capped at 180 KB in a `petPhoto` record's existing `payload`, so it needs no CloudKit schema change. Each pet also keeps a list of potential sitters (name, phone with tap-to-call, note) inside the pet record (tester feedback #16).
 - Four large buttons; one tap logs what, who and when. Dog: Potty, Meal, Walk, Meds. Cat, Rabbit: Meal, Litter, Meds, Play. Small pet, Bird, Other: Meal, Cleaning, Meds, Play. Fish, Reptile: Meal, Water, Cleaning, Meds. Those are defaults: Settings, Log buttons shows, hides and reorders them per pet from the eight activities, synced with the household (tester feedback #14).
 - Now view: the last of each, who did it, and the last successful sync time.
 - User-entered medications with given or skipped, actual time, and who.

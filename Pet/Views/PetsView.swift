@@ -87,6 +87,8 @@ struct PetEditor: View {
     @State private var microchip = ""
     @State private var insurance = ""
     @State private var notes = ""
+    @State private var sitters: [SitterContact] = []
+    @State private var sitter: SitterContact?
     @State private var photoItem: PhotosPickerItem?
     @State private var image: UIImage?
     @State private var jpeg: Data?
@@ -95,10 +97,7 @@ struct PetEditor: View {
     @State private var photoError: String?
     @State private var loaded = false
     private var readOnly: Bool { profile != nil && !events.canWrite }
-    private var phoneURL: URL? {
-        let digits = vetPhone.filter { $0.isNumber || $0 == "+" }
-        return digits.count < 3 ? nil : URL(string: "tel:\(digits)")
-    }
+    private var phoneURL: URL? { SitterContact.callURL(vetPhone) }
     var body: some View {
         Form {
             Section { photoRow }.listRowBackground(Color.clear).listRowInsets(EdgeInsets())
@@ -121,6 +120,7 @@ struct PetEditor: View {
                 detail("Insurance", text: $insurance, id: "pet.insurance")
                 detail("Notes", text: $notes, id: "pet.notes", axis: .vertical)
             }
+            sitterSection
             if let profile { Section { EditedLine(author: profile.editedBy, date: profile.editedAt) } }
         }.biscuitList().scrollDismissesKeyboard(.interactively)
         .navigationTitle(profile == nil ? "Add a pet" : "Edit pet").navigationBarTitleDisplayMode(.inline)
@@ -129,8 +129,51 @@ struct PetEditor: View {
             ToolbarItem(placement: .confirmationAction) { Button("Save", action: save)
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || loadingPhoto || readOnly).accessibilityIdentifier("pet.save") }
         }
+        .sheet(item: $sitter) { contact in
+            NavigationStack {
+                SitterContactEditor(contact: contact, isNew: !sitters.contains { $0.id == contact.id }) { updated in
+                    if let index = sitters.firstIndex(where: { $0.id == contact.id }) {
+                        if let updated { sitters[index] = updated } else { sitters.remove(at: index) }
+                    } else if let updated { sitters.append(updated) }
+                    commitSitters()
+                }
+            }
+        }
         .onChange(of: photoItem) { _, item in if let item { Task { await load(item) } } }
         .onAppear(perform: fill)
+    }
+    private var sitterSection: some View {
+        Section("Sitters") {
+            ForEach(sitters) { contact in
+                HStack {
+                    Button { sitter = contact } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(contact.name).foregroundStyle(.primary)
+                            if let detail = [contact.phone, contact.note].compactMap({ $0 }).joined(separator: ", ").nilIfEmpty {
+                                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).disabled(readOnly).accessibilityIdentifier("pet.sitter")
+                    if let url = contact.callURL {
+                        Link(destination: url) { Image(systemName: "phone").frame(minWidth: 44, minHeight: 44) }
+                            .buttonStyle(.borderless).accessibilityLabel("Call \(contact.name)").accessibilityIdentifier("pet.sitter.call")
+                    }
+                }
+            }
+            .onDelete(perform: readOnly ? nil : { sitters.remove(atOffsets: $0); commitSitters() })
+            if !readOnly {
+                Button { sitter = SitterContact(name: "") } label: { Label("Add sitter", systemImage: "plus") }
+                    .frame(minHeight: 44).accessibilityIdentifier("pet.sitter.add")
+            }
+        }
+    }
+    /// A saved pet keeps sitter changes at once, so closing without Save never loses one.
+    /// A new pet has nothing to update yet, so its list waits for Save.
+    private func commitSitters() {
+        guard let profile, var stored = events.pets.first(where: { $0.id == profile.id }) else { return }
+        stored.sitters = sitters.isEmpty ? nil : sitters
+        events.savePet(stored)
     }
     private var photoRow: some View {
         (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 16))) {
@@ -180,6 +223,7 @@ struct PetEditor: View {
         microchip = profile.microchip ?? ""
         insurance = profile.insurance ?? ""
         notes = profile.notes ?? ""
+        sitters = profile.sitters ?? []
         image = events.petPhotos[profile.id]
     }
     private func save() {
@@ -192,6 +236,7 @@ struct PetEditor: View {
         pet.microchip = cleaned(microchip)
         pet.insurance = cleaned(insurance)
         pet.notes = cleaned(notes)
+        pet.sitters = sitters.isEmpty ? nil : sitters
         guard events.savePet(pet) else { return }
         if photoChanged, !events.savePetPhoto(jpeg, petID: pet.id) { photoError = "This photo could not be saved."; return }
         dismiss()
@@ -200,4 +245,51 @@ struct PetEditor: View {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
+}
+
+struct SitterContactEditor: View {
+    let contact: SitterContact
+    let isNew: Bool
+    /// Nil removes the contact.
+    let done: (SitterContact?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var phone = ""
+    @State private var note = ""
+    @State private var loaded = false
+    var body: some View {
+        Form {
+            Section {
+                TextField("Name", text: $name).textContentType(.name).accessibilityIdentifier("sitter.name")
+                TextField("Phone", text: $phone).keyboardType(.phonePad).textContentType(.telephoneNumber).accessibilityIdentifier("sitter.phone")
+                TextField("Note", text: $note, axis: .vertical).accessibilityIdentifier("sitter.note")
+            }
+            if !isNew {
+                Section { Button("Remove sitter", role: .destructive) { done(nil); dismiss() }.accessibilityIdentifier("sitter.remove") }
+            }
+        }.biscuitList()
+        .navigationTitle(isNew ? "Add sitter" : "Edit sitter").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { DismissButton() }
+            ToolbarItem(placement: .confirmationAction) { Button("Save", action: save)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("sitter.save") }
+        }
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            name = contact.name; phone = contact.phone ?? ""; note = contact.note ?? ""
+        }
+    }
+    private func save() {
+        var value = contact
+        value.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        value.phone = phone.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        value.note = note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        done(value)
+        dismiss()
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

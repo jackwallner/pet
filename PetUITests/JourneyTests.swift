@@ -245,6 +245,46 @@ final class JourneyTests: XCTestCase {
         app.terminate()
     }
 
+    func testSittersAreAddedEditedAndKeptWithoutSave() {
+        let app = app(["-SeedDemo", "-LargeText"])
+        let header = app.buttons["now.pet"]
+        XCTAssertTrue(header.waitForExistence(timeout: 15))
+        header.tap()
+        let add = app.buttons["pet.sitter.add"]
+        for _ in 0..<6 where !add.isHittable { app.swipeUp() }
+        XCTAssertTrue(add.isHittable)
+        add.tap()
+        let name = app.textFields["sitter.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["sitter.save"].isEnabled)
+        name.tap(); name.typeText("Sam")
+        let phone = app.textFields["sitter.phone"]
+        phone.tap(); phone.typeText("5550177")
+        shot(app, "sitter-add")
+        app.buttons["sitter.save"].tap()
+        let row = app.buttons["pet.sitter"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.links["pet.sitter.call"].exists || app.buttons["pet.sitter.call"].exists)
+        shot(app, "pet-editor-sitters")
+        // Closing without Save keeps the sitter.
+        app.buttons["Close"].tap()
+        XCTAssertTrue(header.waitForExistence(timeout: 5))
+        header.tap()
+        for _ in 0..<6 where !add.isHittable { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        let note = app.textFields["sitter.note"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap(); note.typeText("Weekends")
+        app.buttons["sitter.save"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Weekends'")).firstMatch.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(app.buttons["sitter.remove"].waitForExistence(timeout: 5))
+        app.buttons["sitter.remove"].tap()
+        XCTAssertFalse(row.waitForExistence(timeout: 2))
+        app.terminate()
+    }
+
     func testLogButtonsCanBeHiddenAddedAndReordered() {
         let app = app(["-SeedDemo"])
         XCTAssertTrue(app.buttons["log.walk"].waitForExistence(timeout: 15))
