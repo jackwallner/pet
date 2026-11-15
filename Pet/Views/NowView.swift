@@ -36,7 +36,7 @@ struct NowView: View {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: typeSize.isAccessibilitySize ? 1 : 2), spacing: 12) {
                         ForEach(pet.shownLogKinds) { kind in
                             let last = NowSummary.last(kind, petID: pet.id, events: events.events)
-                            LogButton(kind: kind, last: last, medication: medicationName(last)) {
+                            LogButton(kind: kind, last: last, medication: events.medicationLabel(last)) {
                                 // Decided at the tap: a sheet that re-decided live would swap to a dose form mid-edit.
                                 if kind == .meds, events.petMedications.count == 1 { tileDose = events.petMedications.first }
                                 else if kind == .meds { meds = true }
@@ -52,35 +52,7 @@ struct NowView: View {
             }.padding(20)
         }
         .background(Theme.background)
-        // Pinned, so a log tap is confirmed even when large text pushes the grid past the fold.
-        .safeAreaInset(edge: .bottom) {
-            if let last = events.lastLogged {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(UndoCopy.text(last, medication: medicationName(last))).font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Button("Undo") {
-                        if events.correct(last, action: .undo) {
-                            events.lastLogged = nil
-                            AccessibilityNotification.Announcement("Undone").post()
-                        }
-                    }.font(.headline).frame(minHeight: 44).accessibilityIdentifier("log.undo")
-                }.padding(.horizontal).padding(.vertical, 8)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-                    .padding(.horizontal, 20).padding(.bottom, 8)
-            }
-        }
-        .sensoryFeedback(.success, trigger: events.lastLogged?.id) { _, new in new != nil }
-        .task(id: events.lastLogged?.id) {
-            guard let last = events.lastLogged else { return }
-            // An Undo left up for hours is one stray tap from erasing the last real feeding.
-            // The 30 seconds run from the entry, not from this view appearing, so leaving Now cannot revive it.
-            let remaining = 30 - Date.now.timeIntervalSince(last.recordedAt)
-            if remaining > 25 { AccessibilityNotification.Announcement(UndoCopy.text(last, medication: medicationName(last))).post() }
-            if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
-            guard !Task.isCancelled, events.lastLogged?.id == last.id else { return }
-            events.lastLogged = nil
-        }
+        .undoBar()
         .navigationTitle(events.pet?.name ?? AppConfig.displayName)
         .toolbar {
             if events.pets.count > 1 {
@@ -101,13 +73,6 @@ struct NowView: View {
     /// A reminder left in Notification Center can be tapped a day late. Its time is a preset only while it is
     /// near enough to be this dose; otherwise the actual time picks, so a missed slot never takes today's dose.
     private var notifiedSlot: Date? { events.notificationScheduledAt.flatMap { DoseSlots.nearest([$0], to: .now) } }
-    /// The Meds tile names which medication its last entry was, unless it can only be the one active medication.
-    /// An archived medication's dose must never read as the remaining one's.
-    private func medicationName(_ last: EventRecord?) -> String? {
-        guard let id = last?.medicationID else { return nil }
-        if events.petMedications.count == 1, events.petMedications.first?.id == id { return nil }
-        return events.medications.first { $0.id == id }?.name
-    }
     private func askForRatingSoon() {
         guard !LaunchOptions.contains("-UITesting"), RatingAsk.isDue() else { return }
         Task {
@@ -235,6 +200,53 @@ struct NextList: View {
             .sheet(item: $dose) { slot in NavigationStack { DoseView(medication: slot.medication, scheduledAt: slot.at) } }
         }
     }
+}
+
+/// The confirmation and Undo for the latest entry, on every tab a caregiver can log from.
+/// The clock, haptic and announcement live once in `UndoClock` so three tabs never speak it three times.
+struct UndoBar: ViewModifier {
+    @EnvironmentObject private var events: EventStore
+    func body(content: Content) -> some View {
+        // Pinned, so a log tap is confirmed even when large text pushes the content past the fold.
+        content.safeAreaInset(edge: .bottom) {
+            if let last = events.lastLogged {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(UndoCopy.text(last, medication: events.medicationLabel(last))).font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button("Undo") {
+                        if events.correct(last, action: .undo) {
+                            events.lastLogged = nil
+                            AccessibilityNotification.Announcement("Undone").post()
+                        }
+                    }.font(.headline).frame(minHeight: 44).accessibilityIdentifier("log.undo")
+                }.padding(.horizontal).padding(.vertical, 8)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+                    .padding(.horizontal, 20).padding(.bottom, 8)
+            }
+        }
+    }
+}
+
+struct UndoClock: ViewModifier {
+    @EnvironmentObject private var events: EventStore
+    func body(content: Content) -> some View {
+        content
+            .sensoryFeedback(.success, trigger: events.lastLogged?.id) { _, new in new != nil }
+            .task(id: events.lastLogged?.id) {
+                guard let last = events.lastLogged else { return }
+                // An Undo left up for hours is one stray tap from erasing the last real feeding.
+                // The 30 seconds run from the entry, so switching tabs cannot revive it.
+                let remaining = 30 - Date.now.timeIntervalSince(last.recordedAt)
+                if remaining > 25 { AccessibilityNotification.Announcement(UndoCopy.text(last, medication: events.medicationLabel(last))).post() }
+                if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+                guard !Task.isCancelled, events.lastLogged?.id == last.id else { return }
+                events.lastLogged = nil
+            }
+    }
+}
+extension View {
+    func undoBar() -> some View { modifier(UndoBar()) }
 }
 
 enum UndoCopy {

@@ -26,7 +26,7 @@ struct RootView: View {
                     NavigationStack { HistoryView() }.tabItem { Label("History", systemImage: "clock") }.tag(1)
                     NavigationStack { CareView() }.tabItem { Label("Care", systemImage: "calendar") }.tag(2)
                     NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
-                }
+                }.modifier(UndoClock())
             }
         }
         .frame(maxWidth: LaunchOptions.contains("-SmallPhone") ? 320 : .infinity)

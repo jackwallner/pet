@@ -43,7 +43,20 @@ final class Persistence: @unchecked Sendable {
     private var storedSharedStore: NSPersistentStore
     var privateStore: NSPersistentStore { standInLock.withLock { storedPrivateStore } }
     var sharedStore: NSPersistentStore { standInLock.withLock { storedSharedStore } }
-    let cloudKitEnabled: Bool
+    private var storedCloudKitEnabled: Bool
+    /// The iCloud account the stores last tried to mirror under. A store that would not mirror is retried
+    /// only after a different sign-in, never on every return to the app.
+    private var attemptedIdentity: (any NSObjectProtocol)?
+    /// True once this process mirrors to iCloud. A launch while signed out of iCloud starts false and
+    /// turns true when `enableCloudKitIfAvailable` reopens the stores after someone signs in.
+    var cloudKitEnabled: Bool { standInLock.withLock { storedCloudKitEnabled } }
+    /// Identifiers of open stores running local-only, so a log that cannot sync never reads as current.
+    var unmirroredStoreIDs: Set<String> {
+        standInLock.withLock {
+            Set([(privateDescription, storedPrivateStore), (sharedDescription, storedSharedStore)]
+                .filter { $0.0.cloudKitContainerOptions == nil }.map { $0.1.identifier })
+        }
+    }
     private let inMemory: Bool
     /// Nil in production. Tests can inject a throwing operation to exercise
     /// rollback paths without changing the persistent model or store files.
@@ -170,7 +183,10 @@ final class Persistence: @unchecked Sendable {
         storedPrivateStore = opened[privateDescription] ?? Self.memoryStandIn(in: container)!
         storedSharedStore = opened[sharedDescription] ?? Self.memoryStandIn(in: container)!
 
-        cloudKitEnabled = wantsCloudKit
+        container.persistentStoreDescriptions = [privateDescription, sharedDescription]
+        // The private store is the household's own log; it decides whether this phone syncs and can share.
+        storedCloudKitEnabled = privateDescription.cloudKitContainerOptions != nil
+        attemptedIdentity = cloudKit && !inMemory ? FileManager.default.ubiquityIdentityToken : nil
         container.viewContext.performAndWait {
             container.viewContext.automaticallyMergesChangesFromParent = true
             container.viewContext.mergePolicy = NSMergePolicy.mergeByPropertyObjectTrump
@@ -280,7 +296,7 @@ final class Persistence: @unchecked Sendable {
 
     /// Opens the real files once the phone is unlocked, and tells every
     /// surface to refetch so nobody is left looking at the empty stand-in.
-    private func reopenStandInStores() {
+    func reopenStandInStores() {
         container.viewContext.performAndWait { reopenOnViewContext() }
     }
 
@@ -311,8 +327,77 @@ final class Persistence: @unchecked Sendable {
             self.unlockObserver = nil
         }
         if reopened {
+            // A locked launch drops mirroring with the file; the next return to the app may turn it back on.
+            attemptedIdentity = nil
             NotificationCenter.default.post(name: Self.storesDidReopen, object: self)
         }
+    }
+
+    // MARK: - Signing in to iCloud
+
+    /// A launch signed out of iCloud opens both files local-only, and the iCloud sign-in the app asks for
+    /// would otherwise do nothing until the next launch. Once an account is present, each file is reopened
+    /// with mirroring; its local entries stay in the file and upload from there. A file that will not mirror
+    /// reopens local-only again, exactly as at launch.
+    @discardableResult
+    func enableCloudKitIfAvailable() -> Bool {
+        guard !inMemory, !isStandingIn, Self.processWantsCloudKit, let identity = FileManager.default.ubiquityIdentityToken else { return false }
+        guard [privateDescription, sharedDescription].contains(where: { $0.cloudKitContainerOptions == nil }),
+              !(attemptedIdentity.map { $0.isEqual(identity) } ?? false) else { return false }
+        attemptedIdentity = identity
+        // Nil when a save was under way and nothing was reopened.
+        guard let enabled = container.viewContext.performAndWait({ enableOnViewContext() }) else { return false }
+        NotificationCenter.default.post(name: Self.storesDidReopen, object: self)
+        return enabled
+    }
+
+    /// Only files open local-only are touched: a store already mirroring is left running.
+    private func enableOnViewContext() -> Bool? {
+        // Every change is saved the moment it is made, so a pending one means a save is under way: try next time.
+        guard !container.viewContext.hasChanges else { attemptedIdentity = nil; return nil }
+        container.viewContext.reset()
+        for description in [privateDescription, sharedDescription] where description.cloudKitContainerOptions == nil {
+            // A store that will not come out stays as it is, local-only and readable.
+            if let open = Self.store(for: description, in: container) {
+                do { try container.persistentStoreCoordinator.remove(open) } catch { continue }
+            }
+            let options = NSPersistentCloudKitContainerOptions(containerIdentifier: AppGroup.cloudKitContainerID)
+            options.databaseScope = description === privateDescription ? .private : .shared
+            description.cloudKitContainerOptions = options
+            var failure = Self.load([description], in: container)[description]
+            if let error = failure {
+                Self.logger.error("\(Self.name(of: description), privacy: .public) failed with CloudKit after sign-in: \(String(describing: error), privacy: .public)")
+                description.cloudKitContainerOptions = nil
+                failure = Self.load([description], in: container)[description]
+            }
+            if failure == nil, let store = Self.store(for: description, in: container) {
+                adopt(store, for: description)
+            } else if let standIn = Self.memoryStandIn(in: container) {
+                // The phone is unlocked here, so the next activation retries the file (EventStore.activate).
+                adopt(standIn, for: description)
+                standInLock.withLock { standIns.append((description, standIn)) }
+                watchForUnlock()
+            }
+        }
+        // Loading one file at a time leaves only the last in the list; keep the pair on record.
+        container.persistentStoreDescriptions = [privateDescription, sharedDescription]
+        historyToken = container.persistentStoreCoordinator.currentPersistentHistoryToken(fromStores: nil)
+        let mirrored = privateDescription.cloudKitContainerOptions != nil
+        standInLock.withLock { storedCloudKitEnabled = mirrored }
+        return mirrored
+    }
+
+    private func watchForUnlock() {
+        #if os(iOS)
+        guard unlockObserver == nil else { return }
+        unlockObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reopenStandInStores()
+        }
+        #endif
     }
 
     private func adopt(_ store: NSPersistentStore, for description: NSPersistentStoreDescription) {

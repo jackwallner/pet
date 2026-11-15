@@ -23,7 +23,7 @@ struct HouseholdView: View {
                     }.accessibilityIdentifier("household.invite").disabled(events.pet == nil)
                 }
             } else {
-                Section { Label("Joined household", systemImage: "person.2"); Text("Your access is covered by the household owner.") }
+                Section { Label("Joined household", systemImage: "person.2") }
             }
             if let share = sharing.share {
                 Section("People") {
@@ -102,7 +102,6 @@ struct JoinView: View {
                 // The app-level alert cannot show over this sheet, so a failed join says why here.
                 if let error = sharing.error { Text(error).foregroundStyle(.red) }
             }
-            Section { Text("Join with iCloud on this iPhone. The household owner covers access.").foregroundStyle(.secondary) }
         }.biscuitList().navigationTitle("Join household").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .cancellationAction) { DismissButton() } }
         .sheet(isPresented: $scanning) { InviteScanner { value in link = value; scanning = false } }

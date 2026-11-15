@@ -71,6 +71,21 @@ final class JourneyTests: XCTestCase {
         XCTAssertTrue(app.buttons["dose.save"].waitForExistence(timeout: 5))
         shot(app, "journey-dose")
         app.buttons["dose.save"].tap()
+        // A dose logged from Care is confirmed there, not only on Now.
+        XCTAssertTrue(app.buttons["log.undo"].waitForExistence(timeout: 5))
+        shot(app, "journey-care-undo")
+        app.buttons["Edit medication"].tap()
+        XCTAssertTrue(app.textFields["medication.name"].waitForExistence(timeout: 5))
+        // The form builds rows as they scroll in; on a smaller phone Archive starts below the fold.
+        let archive = app.buttons["medication.archive"]
+        for _ in 0..<4 where !archive.isHittable { app.swipeUp() }
+        XCTAssertTrue(archive.waitForExistence(timeout: 5))
+        archive.tap()
+        let confirm = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Archive medication", "medication.archive")).firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        shot(app, "journey-archive-confirm")
+        confirm.tap()
+        XCTAssertTrue(app.buttons["medication.dose"].waitForNonExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         tapTab(app, "Settings")
         app.buttons["settings.household"].tap()

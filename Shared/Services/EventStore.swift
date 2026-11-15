@@ -51,11 +51,19 @@ final class EventStore: ObservableObject {
     var visibleEvents: [EventRecord] { EventLedger.visible(events).filter { $0.petID == pet?.id } }
     var petMedications: [Medication] { medications.filter { $0.petID == pet?.id && !$0.archived } }
     var petDueItems: [DueItem] { dueItems.filter { $0.petID == pet?.id && !$0.archived } }
+    /// Names which medication an entry was, unless it can only be the one active medication.
+    /// An archived medication's dose must never read as the remaining one's.
+    func medicationLabel(_ entry: EventRecord?) -> String? {
+        guard let id = entry?.medicationID else { return nil }
+        if petMedications.count == 1, petMedications.first?.id == id { return nil }
+        return medications.first { $0.id == id }?.name
+    }
 
     init(persistence: Persistence, defaults: UserDefaults = AppGroup.defaults) {
         self.persistence = persistence
         self.defaults = defaults
         sync = CloudSyncState(defaults: defaults, cloudEnabled: persistence.cloudKitEnabled)
+        sync.setMirroring(enabled: persistence.cloudKitEnabled, unmirrored: persistence.unmirroredStoreIDs)
         if defaults.string(forKey: "phoneID") == nil { defaults.set(UUID().uuidString, forKey: "phoneID") }
         selectedPetID = defaults.string(forKey: "selectedPetID").flatMap(UUID.init)
         reload()
@@ -64,7 +72,11 @@ final class EventStore: ObservableObject {
             Task { @MainActor in self?.scheduleReload() }
         })
         observers.append(center.addObserver(forName: Persistence.storesDidReopen, object: persistence, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.reload() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.sync.setMirroring(enabled: self.persistence.cloudKitEnabled, unmirrored: self.persistence.unmirroredStoreIDs)
+                self.reload()
+            }
         })
         observers.append(center.addObserver(forName: NSPersistentCloudKitContainer.eventChangedNotification, object: persistence.container, queue: .main) { [weak self] note in
             guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event, let ended = event.endDate else { return }
@@ -73,6 +85,16 @@ final class EventStore: ObservableObject {
                 if event.succeeded { self?.scheduleReload() }
             }
         })
+    }
+
+    /// On every return to the app: reopens the log with iCloud when someone signed in since launch, then
+    /// reloads at once, on this pass, because a reopen resets every object the screens hold.
+    func activate() {
+        // A file left shut by a failed reopen opens on the next return to the app, not only at the next unlock.
+        if persistence.isStandingIn, UIApplication.shared.isProtectedDataAvailable { persistence.reopenStandInStores() }
+        persistence.enableCloudKitIfAvailable()
+        reload()
+        sync.setMirroring(enabled: persistence.cloudKitEnabled, unmirrored: persistence.unmirroredStoreIDs)
     }
 
     private func scheduleReload() {
@@ -110,7 +132,8 @@ final class EventStore: ObservableObject {
         loadPhotos(Array(household?.records ?? []))
         if !pets.contains(where: { $0.id == selectedPetID }) { selectedPetID = pets.first?.id }
         awaitingShare = defaults.bool(forKey: "pendingShare")
-        Reminders.schedule(store: self)
+        // A launch before the first unlock shows empty stand-ins; planning from them would cancel every reminder.
+        if !persistence.isStandingIn { Reminders.schedule(store: self) }
     }
 
     struct HouseholdContents {
@@ -255,6 +278,17 @@ final class EventStore: ObservableObject {
         value.editedBy = caregiver
         return write(id: value.id, category: "med", value: value)
     }
+    /// A read-only pet's medication keeps reminding its reminder phone, so that phone can always stop it,
+    /// even when nothing else about the log can change.
+    @discardableResult
+    func turnOffReminders(_ medication: Medication) -> Bool {
+        guard var value = medications.first(where: { $0.id == medication.id }), value.petID == pet?.id,
+              value.reminderPhoneID == phoneID, value.remindersEnabled else { return false }
+        value.remindersEnabled = false
+        value.editedAt = .now
+        value.editedBy = caregiver
+        return write(id: value.id, category: "med", value: value)
+    }
     @discardableResult
     func saveDueItem(_ value: DueItem) -> Bool {
         guard canWrite, value.petID == pet?.id else { error = "This log is read-only."; return false }
@@ -314,6 +348,8 @@ final class EventStore: ObservableObject {
     func setHouseholdExpiry(_ date: Date?) {
         // An unavailable receipt must never manufacture a fresh subscription or erase its lapse date.
         guard let date else { return }
+        // Locked files open as empty stand-ins; a write would be refused and surface as an alert later.
+        guard !persistence.isStandingIn else { return }
         // The purchase covers the household this account owns, even while a joined household is on screen.
         let owned = households.filter { $0.objectID.persistentStore != persistence.sharedStore }
         let roots = owned.isEmpty ? (isOwner ? [ensureHousehold()] : []) : owned

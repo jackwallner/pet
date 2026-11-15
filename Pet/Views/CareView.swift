@@ -22,7 +22,7 @@ struct CareView: View {
                 Button("Add a recurring item") { newDue = true }.disabled(!events.canWrite)
                     .accessibilityIdentifier("care.addDue")
             }
-        }.biscuitList().navigationTitle("Care")
+        }.biscuitList().navigationTitle("Care").undoBar()
         .sheet(isPresented: $newDue) { NavigationStack { DueEditor(item: nil) } }
         .sheet(item: $selectedDue) { item in NavigationStack { DueEditor(item: item) } }
     }
@@ -33,6 +33,7 @@ struct MedicationsView: View {
     @State private var add = false
     @State private var editing: Medication?
     @State private var dose: Medication?
+    @State private var stopping: Medication?
     var body: some View {
         List {
             if events.isSharedLog { Section { SyncLine(sync: events.sync, store: events.syncStoreID) } }
@@ -51,14 +52,22 @@ struct MedicationsView: View {
                             }
                         }.padding(.vertical, 4).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityIdentifier("medication.dose")
-                    Button("Edit medication") { editing = med }.disabled(!events.canWrite)
+                    if events.canWrite { Button("Edit medication") { editing = med } }
+                    else if med.remindersEnabled && med.reminderPhoneID == events.phoneID {
+                        Button("Turn off reminders", role: .destructive) { stopping = med }
+                    }
                 }
             }
-        }.biscuitList().navigationTitle("Medications").navigationBarTitleDisplayMode(.inline)
+        }.biscuitList().navigationTitle("Medications").navigationBarTitleDisplayMode(.inline).undoBar()
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { add = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add medication").accessibilityIdentifier("medication.add").disabled(!events.canWrite) } }
         .sheet(isPresented: $add) { NavigationStack { MedicationEditor(medication: nil) } }
         .sheet(item: $editing) { med in NavigationStack { MedicationEditor(medication: med) } }
         .sheet(item: $dose) { med in NavigationStack { DoseView(medication: med, scheduledAt: nil) } }
+        // Read-only, nothing can turn them back on until the household renews, so one tap never does it.
+        .confirmationDialog("Turn off reminders for \(stopping?.name ?? "")?", isPresented: Binding(get: { stopping != nil }, set: { if !$0 { stopping = nil } }),
+                            titleVisibility: .visible, presenting: stopping) { med in
+            Button("Turn off reminders", role: .destructive) { _ = events.turnOffReminders(med) }
+        } message: { _ in Text("They can't be turned back on while this log is read-only.") }
     }
 }
 
@@ -144,6 +153,7 @@ struct MedicationEditor: View {
     @State private var phoneName = ""
     @State private var permissionDenied = false
     @State private var loaded = false
+    @State private var confirmArchive = false
     var body: some View {
         Form {
             Section {
@@ -182,7 +192,10 @@ struct MedicationEditor: View {
             }
             if let medication {
                 Section { EditedLine(author: medication.editedBy, date: medication.editedAt) }
-                Section { Button("Archive medication", role: .destructive) { var value = medication; value.archived = true; if events.saveMedication(value) { dismiss() } } }
+                Section { Button("Archive medication", role: .destructive) { confirmArchive = true }.disabled(!events.canWrite).accessibilityIdentifier("medication.archive") }
+                    .confirmationDialog("Archive \(medication.name)?", isPresented: $confirmArchive, titleVisibility: .visible) {
+                        Button("Archive medication", role: .destructive) { var value = medication; value.archived = true; if events.saveMedication(value) { dismiss() } }
+                    } message: { Text("Its reminders stop. Past doses stay in history.") }
             }
         }.biscuitList().navigationTitle(medication == nil ? "Add medication" : "Edit medication").navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -233,6 +246,7 @@ struct DueEditor: View {
     @State private var reminders = false
     @State private var loaded = false
     @State private var permissionDenied = false
+    @State private var confirmArchive = false
     var body: some View {
         Form {
             Section {
@@ -245,7 +259,10 @@ struct DueEditor: View {
             }
             if let item {
                 Section { EditedLine(author: item.editedBy, date: item.editedAt) }
-                Section { Button("Archive item", role: .destructive) { var value = item; value.archived = true; if events.saveDueItem(value) { dismiss() } } }
+                Section { Button("Archive item", role: .destructive) { confirmArchive = true }.disabled(!events.canWrite).accessibilityIdentifier("due.archive") }
+                    .confirmationDialog("Archive \(item.name)?", isPresented: $confirmArchive, titleVisibility: .visible) {
+                        Button("Archive item", role: .destructive) { var value = item; value.archived = true; if events.saveDueItem(value) { dismiss() } }
+                    } message: { Text("Its reminders stop. Past entries stay in history.") }
             }
         }.biscuitList().navigationTitle(item == nil ? "Add recurring item" : "Edit recurring item").navigationBarTitleDisplayMode(.inline)
         .toolbar {

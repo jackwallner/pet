@@ -24,7 +24,6 @@ struct PetApp: App {
                 .preferredColorScheme(LaunchOptions.value("-Appearance") == "dark" ? .dark : LaunchOptions.value("-Appearance") == "light" ? .light : nil)
                 .modifier(DebugTextSize())
                 .task {
-                    store.didUpdateExpiry = { date in events.setHouseholdExpiry(date) }
                     #if DEBUG
                     if LaunchOptions.contains("-SeedDemo") { events.seedDemo(pro: LaunchOptions.contains("-DemoPro")) }
                     if LaunchOptions.contains("-SimPartner"), let pet = events.pet, let root = events.household?.id {
@@ -44,10 +43,14 @@ struct PetApp: App {
                     #if DEBUG
                     if phase == .background { Task { await ReminderProbe.scheduleIfAsked(events: events) } }
                     #endif
-                    if phase == .background { events.lastLogged = nil; events.notificationMedicationID = nil; events.notificationScheduledAt = nil }
+                    if phase == .background {
+                        events.lastLogged = nil; events.notificationMedicationID = nil; events.notificationScheduledAt = nil
+                        BackgroundRefresh.schedule()
+                    }
                     guard phase == .active else { return }
                     events.sync.activated()
-                    events.reload()
+                    // Signing in to iCloud from the app's prompt turns sync and sharing on here, without a relaunch.
+                    events.activate()
                     Task { await store.refresh(); await sharing.refresh() }
                 }
                 .onChange(of: events.household?.objectID) { _, _ in Task { await sharing.refresh() } }
@@ -59,6 +62,9 @@ struct PetApp: App {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = NotificationRouter.shared
+        // Set here, not in the scene: a background refresh launches no scene and must still write the expiry.
+        StoreService.shared.didUpdateExpiry = { date in EventStore.shared.setHouseholdExpiry(date) }
+        BackgroundRefresh.register()
         return true
     }
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {

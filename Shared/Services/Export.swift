@@ -83,19 +83,29 @@ struct SitterSnapshot: Equatable {
 @MainActor
 enum SitterPDF {
     enum PDFError: LocalizedError {
-        case tooLong
-        var errorDescription: String? { "This sitter sheet exceeds one page. Shorten the pet notes or medication instructions, then try again." }
+        case tooLong(String)
+        var errorDescription: String? {
+            guard case .tooLong(let title) = self else { return nil }
+            return "\(title) exceeds one page. Shorten the pet notes or medication instructions, then try again."
+        }
     }
     /// Below this a sitter, often reading on a phone or a printout, cannot comfortably read the instructions.
     static let minimumSize: CGFloat = 10
-    static func data(_ snapshot: SitterSnapshot) throws -> Data {
-        let page = CGRect(x: 0, y: 0, width: 612, height: 792)
-        let photoRect = CGRect(x: 472, y: 36, width: 100, height: 100)
+    private static let page = CGRect(x: 0, y: 0, width: 612, height: 792)
+    /// One snapshot fitted to its page: the text shrinks first, then the line spacing tightens at the floor,
+    /// so a household with many medications still gets a sheet instead of an error.
+    private struct Layout {
+        let snapshot: SitterSnapshot
+        let text: NSAttributedString
+        let bodyRect: CGRect
+        let titleRect: CGRect
+        let titleSize: CGFloat
+    }
+    private static func layout(_ snapshot: SitterSnapshot) throws -> Layout {
         let bodyRect = snapshot.photo == nil ? CGRect(x: 40, y: 100, width: 532, height: 640) : CGRect(x: 40, y: 148, width: 532, height: 592)
-        var size: CGFloat = 15
-        func body(_ size: CGFloat) -> NSAttributedString {
+        func body(_ size: CGFloat, spacing: CGFloat) -> NSAttributedString {
             let paragraph = NSMutableParagraphStyle()
-            paragraph.lineSpacing = 4
+            paragraph.lineSpacing = spacing
             let text = NSMutableAttributedString()
             for (index, line) in snapshot.lines.enumerated() {
                 let font = SitterSnapshot.headings.contains(line) ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size)
@@ -104,21 +114,36 @@ enum SitterPDF {
             }
             return text
         }
-        func height(_ size: CGFloat) -> CGFloat {
-            body(size).boundingRect(with: CGSize(width: bodyRect.width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height
+        func fits(_ text: NSAttributedString) -> Bool {
+            text.boundingRect(with: CGSize(width: bodyRect.width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height <= bodyRect.height
         }
-        while size > minimumSize && height(size) > bodyRect.height { size -= 0.5 }
-        guard height(size) <= bodyRect.height else { throw PDFError.tooLong }
-        let text = body(size)
-        var titleSize: CGFloat = 25
+        var fitted: NSAttributedString?
+        for spacing in [4, 2, 0] as [CGFloat] {
+            var size: CGFloat = 15
+            while size > minimumSize && !fits(body(size, spacing: spacing)) { size -= 0.5 }
+            if fits(body(size, spacing: spacing)) { fitted = body(size, spacing: spacing); break }
+        }
+        guard let text = fitted else { throw PDFError.tooLong(snapshot.title) }
         let titleRect = CGRect(x: 40, y: 40, width: snapshot.photo == nil ? 532 : 416, height: 52)
-        while titleSize > 12 && (snapshot.title as NSString).boundingRect(with: CGSize(width: titleRect.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: [.font: UIFont.boldSystemFont(ofSize: titleSize)], context: nil).height > titleRect.height { titleSize -= 0.5 }
-        guard (snapshot.title as NSString).boundingRect(with: CGSize(width: titleRect.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: [.font: UIFont.boldSystemFont(ofSize: titleSize)], context: nil).height <= titleRect.height else { throw PDFError.tooLong }
+        func titleHeight(_ size: CGFloat) -> CGFloat {
+            (snapshot.title as NSString).boundingRect(with: CGSize(width: titleRect.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: [.font: UIFont.boldSystemFont(ofSize: size)], context: nil).height
+        }
+        var titleSize: CGFloat = 25
+        while titleSize > 12 && titleHeight(titleSize) > titleRect.height { titleSize -= 0.5 }
+        guard titleHeight(titleSize) <= titleRect.height else { throw PDFError.tooLong(snapshot.title) }
+        return Layout(snapshot: snapshot, text: text, bodyRect: bodyRect, titleRect: titleRect, titleSize: titleSize)
+    }
+    static func data(_ snapshot: SitterSnapshot) throws -> Data { try data([snapshot]) }
+    /// One page per pet, so a sitter minding two dogs gets both on one PDF.
+    static func data(_ snapshots: [SitterSnapshot]) throws -> Data {
+        let layouts = try snapshots.map(layout)
         return UIGraphicsPDFRenderer(bounds: page).pdfData { renderer in
-            renderer.beginPage()
-            (snapshot.title as NSString).draw(in: titleRect, withAttributes: [.font: UIFont.boldSystemFont(ofSize: titleSize), .foregroundColor: UIColor.black])
-            text.draw(in: bodyRect)
-            if let photo = snapshot.photo { draw(photo, filling: photoRect, in: renderer.cgContext) }
+            for layout in layouts {
+                renderer.beginPage()
+                (layout.snapshot.title as NSString).draw(in: layout.titleRect, withAttributes: [.font: UIFont.boldSystemFont(ofSize: layout.titleSize), .foregroundColor: UIColor.black])
+                layout.text.draw(in: layout.bodyRect)
+                if let photo = layout.snapshot.photo { draw(photo, filling: CGRect(x: 472, y: 36, width: 100, height: 100), in: renderer.cgContext) }
+            }
         }
     }
     private static func draw(_ photo: UIImage, filling rect: CGRect, in context: CGContext) {
@@ -130,13 +155,15 @@ enum SitterPDF {
         photo.draw(in: CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height))
         context.restoreGState()
     }
-    static func file(_ snapshot: SitterSnapshot) throws -> URL {
+    static func file(_ snapshot: SitterSnapshot) throws -> URL { try file([snapshot]) }
+    static func file(_ snapshots: [SitterSnapshot]) throws -> URL {
         // The sitter sees this name. A folder per file keeps it readable and still unique.
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let safe = snapshot.title.components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined(separator: "-")
+        let title = snapshots.count == 1 ? snapshots[0].title : "Sitter sheet"
+        let safe = title.components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined(separator: "-")
         let url = folder.appendingPathComponent("\(safe).pdf")
-        try data(snapshot).write(to: url, options: .atomic)
+        try data(snapshots).write(to: url, options: .atomic)
         return url
     }
 }

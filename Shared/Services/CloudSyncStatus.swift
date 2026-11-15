@@ -17,7 +17,8 @@ final class CloudSyncState: ObservableObject {
     @Published private(set) var connected = true
     /// Failed operations, keyed by store and kind, so a successful upload never clears a failed download.
     @Published private(set) var failures: Set<String> = []
-    let cloudEnabled: Bool
+    /// False until this process mirrors to iCloud. Turns true without a relaunch when someone signs in to iCloud.
+    @Published private(set) var cloudEnabled: Bool
     private var demoSynced = false
     private let defaults: UserDefaults
     private let monitor = NWPathMonitor()
@@ -29,6 +30,9 @@ final class CloudSyncState: ObservableObject {
         self.cloudEnabled = cloudEnabled
         lastSyncedByStore = defaults.dictionary(forKey: Self.key)?.compactMapValues { $0 as? Date } ?? [:]
         failures = Set(defaults.stringArray(forKey: Self.failuresKey) ?? [])
+        // Builds before per-store tracking kept one date for every log. It cannot say which log it vouched for,
+        // so it is dropped rather than credited to the wrong one.
+        defaults.removeObject(forKey: "lastCloudSync")
         #if DEBUG
         // Store screenshots run without an iCloud account; show a recent download instead of the stale banner.
         if LaunchOptions.contains("-DemoSynced") { demoSynced = true }
@@ -38,6 +42,14 @@ final class CloudSyncState: ObservableObject {
         }
         monitor.start(queue: DispatchQueue(label: "pet.reachability"))
     }
+    /// Store files open local-only while the rest of the app mirrors (one would not start with iCloud).
+    @Published private(set) var unmirrored: Set<String> = []
+    func setMirroring(enabled: Bool, unmirrored stores: Set<String>) {
+        if cloudEnabled != enabled { cloudEnabled = enabled }
+        if unmirrored != stores { unmirrored = stores }
+    }
+    /// Whether this log can receive a partner's entries at all. A saved download date proves nothing otherwise.
+    func mirrors(store: String?) -> Bool { cloudEnabled && !(store.map(unmirrored.contains) ?? false) }
     func ended(store: String, isImport: Bool, isSetup: Bool, at date: Date, succeeded: Bool, error: Error?) {
         let operation = "\(store).\(isSetup ? "setup" : isImport ? "import" : "export")"
         guard succeeded else { failures.insert(operation); defaults.set(Array(failures), forKey: Self.failuresKey); return }
@@ -53,7 +65,7 @@ final class CloudSyncState: ObservableObject {
     @Published private(set) var activatedAt = Date.now
     func activated(at date: Date = .now) { activatedAt = date }
     func checking(store: String?, at now: Date) -> Bool {
-        cloudEnabled && connected && !problem(store: store) && lastSynced(store: store) != nil && now.timeIntervalSince(activatedAt) < 30
+        mirrors(store: store) && connected && !problem(store: store) && lastSynced(store: store) != nil && now.timeIntervalSince(activatedAt) < 30
     }
     func lastSynced(store: String?) -> Date? {
         if demoSynced { return .now.addingTimeInterval(-60) }
@@ -65,6 +77,6 @@ final class CloudSyncState: ObservableObject {
     }
     func stale(store: String?, at now: Date) -> Bool {
         if demoSynced { return false }
-        return !cloudEnabled || problem(store: store) || SyncFreshness.isStale(lastSuccess: lastSynced(store: store), connected: connected, now: now)
+        return !mirrors(store: store) || problem(store: store) || SyncFreshness.isStale(lastSuccess: lastSynced(store: store), connected: connected, now: now)
     }
 }

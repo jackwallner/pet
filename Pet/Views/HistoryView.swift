@@ -38,7 +38,7 @@ struct HistoryView: View {
                 }.buttonStyle(.plain).accessibilityIdentifier("history.entry")
             }
         }
-        .biscuitList().navigationTitle("History")
+        .biscuitList().navigationTitle("History").undoBar()
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Activity, person, note")
         .toolbar {
             if events.pet != nil { ToolbarItem(placement: .topBarTrailing) { Button { add = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add an earlier entry").disabled(!events.canWrite) } }

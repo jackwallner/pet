@@ -61,7 +61,7 @@ struct SyncLine: View {
     }
     private func staleText(last: Date?, now: Date) -> String {
         let since = last.map { "Not updated since \(NowSummary.when($0, now: now))" } ?? "Not updated yet"
-        if !sync.cloudEnabled { return "iCloud unavailable. \(since)" }
+        if !sync.mirrors(store: store) { return "iCloud unavailable. \(since)" }
         if !sync.connected { return "Offline. \(since)" }
         if sync.problem(store: store) { return "Sync needs attention. \(since)" }
         return since

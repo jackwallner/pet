@@ -14,9 +14,7 @@ struct SitterView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         Image(systemName: "doc.text").font(.system(size: 48)).foregroundStyle(Theme.accent)
-                        Text("One-page PDF").font(.title2.weight(.semibold))
-                        Text("Last logged, medication instructions and recurring items.")
-                        Text("A snapshot to share with a sitter.").foregroundStyle(.secondary)
+                        Text(events.pets.count > 1 ? "One page per pet" : "One-page PDF").font(.title2.weight(.semibold))
                         if let error { Text(error).foregroundStyle(.secondary) }
                     }.padding(20)
                 }.background(Theme.background)
@@ -36,12 +34,18 @@ struct SitterView: View {
         .sheet(isPresented: $paywall, onDismiss: { if events.access.active(at: .now) { build() } }) { NavigationStack { PaywallView(source: "sitter", onboarding: false) } }
         .task { if LaunchOptions.value("-ScreenshotRoute") == "sitter", events.access.active(at: .now) { build() } }
     }
+    /// Every pet in the household, the one on screen first: a sitter minds them all.
     private func build() {
-        guard let pet = events.pet else { return }
+        guard let current = events.pet else { return }
         error = nil
-        do { url = try SitterPDF.file(SitterSnapshot.build(pet: pet, medications: events.medications, dueItems: events.dueItems, events: events.events,
-                                                          lastSync: events.sync.lastSynced(store: events.syncStoreID), shared: events.isSharedLog, photo: events.petPhotos[pet.id])) }
-        catch { self.error = error.localizedDescription; url = nil }
+        let pets = [current] + events.pets.filter { $0.id != current.id }
+        let lastSync = events.sync.lastSynced(store: events.syncStoreID)
+        do {
+            url = try SitterPDF.file(pets.map { pet in
+                SitterSnapshot.build(pet: pet, medications: events.medications, dueItems: events.dueItems, events: events.events,
+                                     lastSync: lastSync, shared: events.isSharedLog, photo: events.petPhotos[pet.id])
+            })
+        } catch { self.error = error.localizedDescription; url = nil }
     }
 }
 
@@ -50,7 +54,8 @@ struct PDFPreview: UIViewRepresentable {
     func makeUIView(context: Context) -> PDFView {
         let view = PDFView()
         view.autoScales = true
-        view.displayMode = .singlePage
+        // One page per pet: scroll through them all before sharing.
+        view.displayMode = .singlePageContinuous
         view.backgroundColor = .secondarySystemBackground
         view.document = PDFDocument(url: url)
         view.accessibilityIdentifier = "sitter.pdf"

@@ -232,6 +232,27 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(own.householdActiveUntil, renewal)
         XCTAssertNotEqual(shared.householdActiveUntil, renewal)
     }
+    func testReminderPhoneCanTurnOffRemindersOnReadOnlyPet() {
+        store.setHouseholdExpiry(.now.addingTimeInterval(86400))
+        let rex = PetProfile(name: "Rex", editedBy: "Jack")
+        XCTAssertTrue(store.savePet(rex))
+        var mine = Medication(petID: rex.id, name: "Ear drops", minutes: [480], startDate: day(2026, 1, 1), reminderPhoneID: store.phoneID,
+                              reminderPhoneName: "Jack's iPhone", remindersEnabled: true, editedBy: "Jack")
+        var theirs = mine
+        theirs.id = UUID(); theirs.reminderPhoneID = "partner"
+        XCTAssertTrue(store.saveMedication(mine))
+        XCTAssertTrue(store.saveMedication(theirs))
+        store.setHouseholdExpiry(.now.addingTimeInterval(-86400))
+        store.select(rex.id)
+        XCTAssertFalse(store.canWrite)
+        mine.name = "Renamed"
+        XCTAssertFalse(store.saveMedication(mine))
+        XCTAssertFalse(store.turnOffReminders(theirs))
+        XCTAssertTrue(store.turnOffReminders(mine))
+        let saved = store.medications.first { $0.id == mine.id }
+        XCTAssertEqual(saved?.remindersEnabled, false)
+        XCTAssertEqual(saved?.name, "Ear drops")
+    }
     func testUnknownReceiptCreatesNoHousehold() {
         let fresh = EventStore(persistence: Persistence(cloudKit: false, inMemory: true), defaults: UserDefaults(suiteName: "pet.tests.\(UUID())")!)
         fresh.setHouseholdExpiry(nil)
@@ -335,14 +356,26 @@ final class DomainTests: XCTestCase {
         XCTAssertTrue(own.allSatisfy { $0.isMedication && $0.actions.isEmpty && $0.category == "pet.medication" && $0.body.contains("sync time") })
         XCTAssertTrue(ReminderPlanner.plan(medications: [medication], items: [], events: [], phoneID: "other", writablePets: [store.pet!.id], now: now, calendar: calendar).isEmpty)
     }
-    func testReadOnlyStopsRemindersButDueItemsHaveDone() {
+    func testReadOnlyKeepsMedicationRemindersButDropsDueItems() {
         let medication = med()
         let now = day(2026, 11, 6)
         let item = DueItem(petID: store.pet!.id, name: "Walk", startDate: now, remindersEnabled: true, editedBy: "Jack")
-        XCTAssertTrue(ReminderPlanner.plan(medications: [medication], items: [item], events: [], phoneID: store.phoneID, writablePets: [], now: now).isEmpty)
+        let readOnly = ReminderPlanner.plan(medications: [medication], items: [item], events: [], phoneID: store.phoneID, writablePets: [], now: now, calendar: calendar)
+        XCTAssertEqual(readOnly.count, 30)
+        XCTAssertTrue(readOnly.allSatisfy { $0.isMedication && $0.actions.isEmpty })
         let due = ReminderPlanner.plan(medications: [], items: [item], events: [], phoneID: store.phoneID, writablePets: [item.petID], now: now)
         XCTAssertFalse(due.isEmpty)
         XCTAssertEqual(due.first?.actions, ["MARK_DONE"])
+    }
+    func testReminderTitleNamesThePetOnlyWhenThereAreSeveral() {
+        let medication = med()
+        let now = day(2026, 11, 6)
+        let pet = store.pet!.id
+        let solo = ReminderPlanner.plan(medications: [medication], items: [], events: [], phoneID: store.phoneID, writablePets: [pet], now: now, calendar: calendar)
+        XCTAssertEqual(solo.first?.title, medication.name)
+        let named = ReminderPlanner.plan(medications: [medication], items: [], events: [], phoneID: store.phoneID, writablePets: [pet],
+                                         petNames: [pet: "Milo"], now: now, calendar: calendar)
+        XCTAssertEqual(named.first?.title, "Milo: \(medication.name)")
     }
     func testMedicationReminderUsesThatMedicationsLastDose() {
         let a = UUID(), b = UUID()
@@ -578,6 +611,36 @@ final class DomainTests: XCTestCase {
             XCTAssertTrue(pdf.string?.contains(text) == true, text)
         }
         XCTAssertGreaterThan(data.count, try SitterPDF.data(SitterSnapshot(title: full.title, lines: full.lines)).count + 1000)
+    }
+    func testSitterSheetHasOnePagePerPet() throws {
+        let milo = SitterSnapshot.build(pet: store.pet!, medications: [med()], dueItems: [], events: store.events, lastSync: nil)
+        let rex = SitterSnapshot.build(pet: PetProfile(name: "Rex", editedBy: "Jack"), medications: [], dueItems: [], events: [], lastSync: nil)
+        let url = try SitterPDF.file([milo, rex])
+        XCTAssertEqual(url.lastPathComponent, "Sitter sheet.pdf")
+        let pdf = try XCTUnwrap(PDFDocument(url: url))
+        XCTAssertEqual(pdf.pageCount, 2)
+        XCTAssertTrue(pdf.page(at: 0)?.string?.contains("Milo") == true)
+        XCTAssertTrue(pdf.page(at: 1)?.string?.contains("Rex") == true)
+        XCTAssertEqual(try SitterPDF.file(milo).lastPathComponent, "\(milo.title).pdf")
+    }
+    func testCrowdedSitterSheetTightensSpacingInsteadOfFailing() throws {
+        let snapshot = SitterSnapshot(title: "Sheet", lines: (1...43).map { "Line \($0)" })
+        let pdf = try XCTUnwrap(PDFDocument(data: try SitterPDF.data(snapshot)))
+        XCTAssertTrue(pdf.string?.contains("Line 43") == true)
+    }
+    func testUnmirroredSharedLogNeverReadsCurrent() {
+        let sync = CloudSyncState(defaults: defaults, cloudEnabled: true)
+        let now = Date.now
+        sync.ended(store: "shared", isImport: true, isSetup: false, at: now, succeeded: true, error: nil)
+        sync.ended(store: "private", isImport: true, isSetup: false, at: now, succeeded: true, error: nil)
+        sync.setMirroring(enabled: true, unmirrored: ["shared"])
+        XCTAssertTrue(sync.stale(store: "shared", at: now))
+        XCTAssertFalse(sync.stale(store: "private", at: now))
+    }
+    func testLegacySyncDateIsDropped() {
+        defaults.set(Date.now, forKey: "lastCloudSync")
+        _ = CloudSyncState(defaults: defaults, cloudEnabled: true)
+        XCTAssertNil(defaults.object(forKey: "lastCloudSync"))
     }
     func testOversizedSitterSheetFailsExplicitly() {
         let snapshot = SitterSnapshot(title: "Sheet", lines: Array(repeating: String(repeating: "long ", count: 60), count: 100))
