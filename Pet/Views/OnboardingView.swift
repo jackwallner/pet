@@ -32,7 +32,10 @@ struct OnboardingView: View {
                             Text("Household").font(.headline)
                             Text("Sharing on iPhone with iCloud, extra pets and a sitter sheet.").fixedSize(horizontal: false, vertical: true)
                         }
-                        Button("Join a household") { joining = true }.accessibilityIdentifier("onboarding.join")
+                        Button("Join a household") {
+                            if !caregiver.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { events.caregiver = caregiver }
+                            joining = true
+                        }.accessibilityIdentifier("onboarding.join")
                     }.padding(20)
                 }.onSubmit { field = nil }.scrollDismissesKeyboard(.immediately).background(Theme.background)
                 .safeAreaInset(edge: .bottom) {

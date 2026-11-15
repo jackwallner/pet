@@ -21,6 +21,7 @@ final class EventStore: ObservableObject {
     @Published var selectedPetID: UUID?
     @Published var lastLogged: EventRecord?
     @Published var notificationMedicationID: UUID?
+    @Published var notificationScheduledAt: Date?
     @Published var error: String?
     @Published var awaitingShare = false
     private var observers: [Any] = []
@@ -31,7 +32,12 @@ final class EventStore: ObservableObject {
         get { defaults.string(forKey: "caregiver") ?? "You" }
         set { defaults.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "caregiver"); objectWillChange.send() }
     }
+    /// A joiner skips onboarding, so the app asks once; until then their entries would read "You" on a partner's phone.
+    var hasCaregiverName: Bool { !(defaults.string(forKey: "caregiver") ?? "").isEmpty }
     var pet: PetProfile? { pets.first { $0.id == selectedPetID } ?? pets.first }
+    /// The store this household mirrors through. Freshness is read per store, so the private log's
+    /// downloads never vouch for a shared log that is behind.
+    var syncStoreID: String? { household?.objectID.persistentStore?.identifier }
     var isOwner: Bool { household?.objectID.persistentStore != persistence.sharedStore }
     var access: HouseholdAccess {
         HouseholdAccess(activeUntil: household?.householdActiveUntil, isOwner: isOwner,
@@ -63,7 +69,7 @@ final class EventStore: ObservableObject {
         observers.append(center.addObserver(forName: NSPersistentCloudKitContainer.eventChangedNotification, object: persistence.container, queue: .main) { [weak self] note in
             guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event, let ended = event.endDate else { return }
             Task { @MainActor in
-                self?.sync.ended(isImport: event.type == .import, isSetup: event.type == .setup, at: ended, succeeded: event.succeeded, error: event.error)
+                self?.sync.ended(store: event.storeIdentifier, isImport: event.type == .import, isSetup: event.type == .setup, at: ended, succeeded: event.succeeded, error: event.error)
                 if event.succeeded { self?.scheduleReload() }
             }
         })
@@ -266,6 +272,7 @@ final class EventStore: ObservableObject {
         }
         guard write(id: event.id, category: "event", value: event, immutable: true) else { return false }
         lastLogged = event
+        if event.medicationID != nil && event.medicationID == notificationMedicationID { notificationMedicationID = nil; notificationScheduledAt = nil }
         if event.action == .log { Measurements.recordLog(defaults: defaults) }
         return true
     }
@@ -274,6 +281,15 @@ final class EventStore: ObservableObject {
     func log(_ kind: EventKind, at date: Date = .now, note: String = "", medicationID: UUID? = nil,
              dueItemID: UUID? = nil, scheduledAt: Date? = nil, doseStatus: DoseStatus? = nil) -> Bool {
         guard let pet else { return false }
+        // A notification can switch pets under an open dose form; never file one pet's medication under another.
+        if let medicationID, medications.first(where: { $0.id == medicationID })?.petID != pet.id {
+            error = "This medication belongs to another pet."
+            return false
+        }
+        if let dueItemID, dueItems.first(where: { $0.id == dueItemID })?.petID != pet.id {
+            error = "This recurring item belongs to another pet."
+            return false
+        }
         return append(EventRecord(petID: pet.id, kind: kind, occurredAt: date, author: caregiver, authorID: phoneID,
                                   medicationID: medicationID, dueItemID: dueItemID, scheduledAt: scheduledAt, doseStatus: doseStatus, note: note))
     }

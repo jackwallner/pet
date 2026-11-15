@@ -9,7 +9,7 @@ struct SitterView: View {
     @State private var error: String?
     var body: some View {
         Group {
-            if let url { PDFPreview(url: url) }
+            if let url { PDFPreview(url: url).id(url) }
             else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
@@ -25,7 +25,8 @@ struct SitterView: View {
         .navigationTitle("Sitter sheet").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             PrimaryButton(title: url == nil ? "Create sitter sheet" : "Share PDF", disabled: events.pet == nil) {
-                if url != nil { share = true }
+                // Rebuild at share time so an entry logged while the preview was open is on the sheet.
+                if url != nil { build(); if url != nil && error == nil { share = true } }
                 else if events.access.active(at: .now) { build() }
                 else if events.isOwner { paywall = true }
                 else { error = "The household owner can renew access." }
@@ -37,8 +38,10 @@ struct SitterView: View {
     }
     private func build() {
         guard let pet = events.pet else { return }
-        do { url = try SitterPDF.file(SitterSnapshot.build(pet: pet, medications: events.medications, dueItems: events.dueItems, events: events.events, lastSync: events.sync.lastSynced, photo: events.petPhotos[pet.id])) }
-        catch { self.error = error.localizedDescription }
+        error = nil
+        do { url = try SitterPDF.file(SitterSnapshot.build(pet: pet, medications: events.medications, dueItems: events.dueItems, events: events.events,
+                                                          lastSync: events.sync.lastSynced(store: events.syncStoreID), shared: events.isSharedLog, photo: events.petPhotos[pet.id])) }
+        catch { self.error = error.localizedDescription; url = nil }
     }
 }
 

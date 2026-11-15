@@ -37,7 +37,7 @@ struct SettingsView: View {
                 NavigationLink { SitterView() } label: { Label("Sitter sheet", systemImage: "doc") }.accessibilityIdentifier("settings.sitter")
                 Button { do { exportURL = try LogExport.file(pets: events.pets, medications: events.medications, events: events.events) } catch { exportError = "The export could not be created. Please try again." } } label: { Label("Export log", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("settings.export")
             }
-            if events.isSharedLog { Section { SyncLine(sync: events.sync) } }
+            if events.isSharedLog { Section { SyncLine(sync: events.sync, store: events.syncStoreID) } }
             if Distribution.isTestFlight {
                 Section("Suggestions") {
                     Button("Suggest a change") { suggesting = true }.accessibilityIdentifier("settings.suggest")

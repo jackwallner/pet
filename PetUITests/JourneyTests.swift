@@ -174,7 +174,7 @@ final class JourneyTests: XCTestCase {
         guard notification.waitForExistence(timeout: 30) else { throw XCTSkip("Notification banners don't show on this simulator") }
         notification.tap()
         XCTAssertTrue(app.buttons["log.meal"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "sync.status").firstMatch.label.contains("Stale"))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "sync.status").firstMatch.label.contains("Not updated"))
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "medication.reminderContext").firstMatch.label.contains("Daily tablet"))
         shot(app, "stale-medication-reminder")
         tapTab(app, "History")

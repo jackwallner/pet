@@ -38,26 +38,41 @@ struct EditedLine: View {
 
 struct SyncLine: View {
     @ObservedObject var sync: CloudSyncState
+    let store: String?
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { time in
-            VStack(alignment: .leading, spacing: 4) {
-                if sync.stale(at: time.date) {
-                    Label(sync.connected ? "Stale" : "Stale, offline", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+        TimelineView(.periodic(from: .now, by: 10)) { time in
+            let last = sync.lastSynced(store: store)
+            Group {
+                if sync.stale(store: store, at: time.date) && sync.checking(store: store, at: time.date) {
+                    // Checking, but the age of what is shown stays visible.
+                    Text("Checking iCloud. \(last.map { "Last updated \(NowSummary.when($0, now: time.date))" } ?? "")").font(.footnote).foregroundStyle(.secondary)
+                } else if sync.stale(store: store, at: time.date) {
+                    // Stale state must be impossible to miss: the tiles below may be behind.
+                    Label(staleText(last: last, now: time.date), systemImage: "exclamationmark.icloud")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                } else {
+                    Text("Updated \(last.map { NowSummary.when($0, now: time.date) } ?? "")").font(.footnote).foregroundStyle(.secondary)
                 }
-                Text("Last successful sync: \(sync.lastSynced?.formatted(date: .abbreviated, time: .shortened) ?? "Awaiting iCloud")")
-                    .font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("sync.status")
         }
+    }
+    private func staleText(last: Date?, now: Date) -> String {
+        let since = last.map { "Not updated since \(NowSummary.when($0, now: now))" } ?? "Not updated yet"
+        if !sync.cloudEnabled { return "iCloud unavailable. \(since)" }
+        if !sync.connected { return "Offline. \(since)" }
+        if sync.problem(store: store) { return "Sync needs attention. \(since)" }
+        return since
     }
 }
 
 struct LapseBanner: View {
     @EnvironmentObject private var events: EventStore
     var body: some View {
-        if events.access.lapsed(at: .now) {
+        // A solo log with one pet loses nothing on lapse, so it gets no banner.
+        if events.access.lapsed(at: .now) && (events.isSharedLog || events.pets.count > 1) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Household subscription ended").font(.subheadline.weight(.semibold))
                 if events.isOwner { Text("Solo logging continues on your first pet.") }
