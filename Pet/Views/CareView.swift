@@ -15,7 +15,7 @@ struct CareView: View {
                     Button { selectedDue = item } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(item.name).foregroundStyle(.primary)
-                            Text("\(time(item.minutes)), \(item.intervalDays == 1 ? "every day" : "every \(item.intervalDays) days")").font(.subheadline).foregroundStyle(.secondary)
+                            Text(DueEngine.summary(item, events: events.events)).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -26,7 +26,6 @@ struct CareView: View {
         .sheet(isPresented: $newDue) { NavigationStack { DueEditor(item: nil) } }
         .sheet(item: $selectedDue) { item in NavigationStack { DueEditor(item: item) } }
     }
-    private func time(_ minutes: Int) -> String { ScheduleEngine.date(forMinutes: minutes, onDayOf: .now)?.formatted(date: .omitted, time: .shortened) ?? "" }
 }
 
 struct MedicationsView: View {
@@ -36,7 +35,7 @@ struct MedicationsView: View {
     @State private var dose: Medication?
     var body: some View {
         List {
-            if events.isSharedLog { Section { SyncLine(sync: events.sync) } }
+            if events.isSharedLog { Section { SyncLine(sync: events.sync, store: events.syncStoreID) } }
             if events.petMedications.isEmpty { ContentUnavailableView("Medications", systemImage: "pills") }
             ForEach(events.petMedications) { med in
                 Section {
@@ -44,10 +43,12 @@ struct MedicationsView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(med.name).font(.headline).foregroundStyle(.primary)
                             if let last = events.visibleEvents.first(where: { $0.medicationID == med.id }) {
-                                Text("\(last.doseStatus?.rawValue ?? "Logged") \(last.occurredAt.formatted(date: .abbreviated, time: .shortened)) · \(last.performedBy)")
+                                Text("\(last.doseStatus?.rawValue ?? "Logged") \(NowSummary.when(last.occurredAt)) · \(last.performedBy)")
                                     .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             } else { Text("Nothing logged").font(.subheadline).foregroundStyle(.secondary) }
-                            Text("Reminder phone: \(med.reminderPhoneName)").font(.footnote).foregroundStyle(.secondary)
+                            if !med.asNeeded {
+                                Text(med.remindersEnabled ? "Reminder: \(med.reminderPhoneName)" : "No reminder").font(.footnote).foregroundStyle(.secondary)
+                            }
                         }.padding(.vertical, 4).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityIdentifier("medication.dose")
                     Button("Edit medication") { editing = med }.disabled(!events.canWrite)
@@ -57,44 +58,72 @@ struct MedicationsView: View {
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { add = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add medication").accessibilityIdentifier("medication.add").disabled(!events.canWrite) } }
         .sheet(isPresented: $add) { NavigationStack { MedicationEditor(medication: nil) } }
         .sheet(item: $editing) { med in NavigationStack { MedicationEditor(medication: med) } }
-        .sheet(item: $dose) { med in NavigationStack { DoseView(medication: med, scheduledAt: pendingTime(med)) } }
-    }
-    private func pendingTime(_ med: Medication) -> Date? {
-        let pending = ScheduleEngine.slots(for: med, on: .now, events: events.events).filter(\.pending)
-        return pending.last(where: { $0.scheduledAt <= .now })?.scheduledAt ?? pending.first?.scheduledAt
+        .sheet(item: $dose) { med in NavigationStack { DoseView(medication: med, scheduledAt: nil) } }
     }
 }
 
 struct DoseView: View {
     let medication: Medication
+    /// The scheduled time the person tapped (Next or a reminder). Nil lets the actual time pick it.
     let scheduledAt: Date?
     @EnvironmentObject private var events: EventStore
     @Environment(\.dismiss) private var dismiss
     @State private var status = DoseStatus.given
     @State private var at = Date.now
     @State private var note = ""
+    @State private var slot: Date?
+    @State private var picked = false
+    @State private var loaded = false
+    private var candidates: [Date] {
+        DoseSlots.candidates(for: medication, actual: at, preset: scheduledAt, events: events.events)
+    }
     var body: some View {
         Form {
             Section {
-                if events.isSharedLog { SyncLine(sync: events.sync) }
+                if events.isSharedLog { SyncLine(sync: events.sync, store: events.syncStoreID) }
                 if let last = events.visibleEvents.first(where: { $0.medicationID == medication.id }) {
-                    LabeledContent("Last dose") { Text("\(last.doseStatus?.rawValue ?? "Logged"), \(last.occurredAt.formatted(date: .abbreviated, time: .shortened)) · \(last.performedBy)") }
+                    LabeledContent("Last dose") { Text("\(last.doseStatus?.rawValue ?? "Logged"), \(NowSummary.when(last.occurredAt)) · \(last.performedBy)") }
                 } else { Text("Last dose: Nothing logged") }
             }
             Section {
                 Picker("Status", selection: $status) { ForEach(DoseStatus.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
                 DatePicker("Actual time", selection: $at, in: ...Date.now)
-                if let scheduledAt { LabeledContent("Scheduled", value: scheduledAt.formatted(date: .abbreviated, time: .shortened)) }
+                if !candidates.isEmpty || slot != nil {
+                    Picker("Scheduled", selection: Binding(get: { slot }, set: { slot = $0; picked = true })) {
+                        Text("Not scheduled").tag(Date?.none)
+                        ForEach(candidates, id: \.self) { Text(NowSummary.when($0)).tag(Optional($0)) }
+                    }.accessibilityIdentifier("dose.slot")
+                }
                 TextField("Note", text: $note, axis: .vertical)
             }
             if !medication.instructions.isEmpty { Section("Your instructions") { Text(medication.instructions) } }
             Section {
+                if let error = events.error { Text(error).foregroundStyle(.red) }
                 Button(status == .given ? "Log given" : "Log skipped") {
-                    if events.log(.meds, at: at, note: note, medicationID: medication.id, scheduledAt: scheduledAt, doseStatus: status) { dismiss() }
+                    if events.log(.meds, at: at, note: note, medicationID: medication.id, scheduledAt: slot, doseStatus: status) { dismiss() }
                 }.disabled(!events.canWrite).accessibilityIdentifier("dose.save")
             }
         }.biscuitList().navigationTitle(medication.name).navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .cancellationAction) { DismissButton() } }
+        .onAppear {
+            guard !loaded else { return }; loaded = true
+            // A tapped reminder or Next row names its time; it holds until the actual time is changed.
+            slot = scheduledAt.flatMap { candidates.contains($0) ? $0 : nil } ?? DoseSlots.auto(for: medication, candidates: candidates, actual: at)
+        }
+        // Backdating a forgotten dose must not silently complete a different scheduled time.
+        .onChange(of: at) { _, value in
+            // A time picked by hand stays while it is still offered; otherwise the actual time picks again.
+            if picked, let chosen = slot, !candidates.contains(chosen) { picked = false }
+            if !picked { slot = DoseSlots.auto(for: medication, candidates: candidates, actual: value) }
+        }
+        // A partner's dose can sync in while this is open; never file under a time that is no longer open.
+        .onChange(of: candidates) { _, list in
+            guard let chosen = slot, !list.contains(chosen) else { return }
+            picked = false
+            slot = DoseSlots.auto(for: medication, candidates: list, actual: at)
+        }
+        .onChange(of: events.pet?.id) { _, id in if id != medication.petID { dismiss() } }
+        .onDisappear { events.error = nil }
     }
 }
 
@@ -110,7 +139,7 @@ struct MedicationEditor: View {
     @State private var end = Date.now
     @State private var hasEnd = false
     @State private var asNeeded = false
-    @State private var reminders = false
+    @State private var reminders = true
     @State private var phoneID = ""
     @State private var phoneName = ""
     @State private var permissionDenied = false
@@ -160,7 +189,12 @@ struct MedicationEditor: View {
             ToolbarItem(placement: .cancellationAction) { DismissButton() }
             ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !events.canWrite).accessibilityIdentifier("medication.save") }
         }
-        .task { permissionDenied = await Reminders.isDenied() }
+        .onChange(of: events.pet?.id) { _, _ in dismiss() }
+        .task {
+            permissionDenied = await Reminders.isDenied()
+            // Show blocked notifications before Save, so one tap saves and nothing turns off unseen.
+            if permissionDenied && phoneID == events.phoneID { reminders = false }
+        }
         .onAppear {
             guard !loaded else { return }; loaded = true
             if let med = medication {
@@ -175,10 +209,12 @@ struct MedicationEditor: View {
     }
     private func save() async {
         guard let pet = events.pet else { return }
-        if reminders && phoneID == events.phoneID && !LaunchOptions.contains("-UITesting") {
+        if reminders && !asNeeded && phoneID == events.phoneID && !LaunchOptions.contains("-UITesting") {
             permissionDenied = !(await Reminders.requestPermission())
+            // Saving "Reminders on" with notifications blocked would promise an alert that never comes.
+            if permissionDenied { reminders = false; return }
         }
-        let value = Medication(id: medication?.id ?? UUID(), petID: pet.id, name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+        let value = Medication(id: medication?.id ?? UUID(), petID: medication?.petID ?? pet.id, name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                instructions: instructions, minutes: Array(Set(times)).sorted(), weekdays: weekdays.sorted(), startDate: start,
                                endDate: hasEnd ? end : nil, asNeeded: asNeeded, reminderPhoneID: phoneID, reminderPhoneName: phoneName,
                                remindersEnabled: reminders && !asNeeded, editedBy: events.caregiver)
@@ -216,7 +252,11 @@ struct DueEditor: View {
             ToolbarItem(placement: .cancellationAction) { DismissButton() }
             ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !events.canWrite).accessibilityIdentifier("due.save") }
         }
-        .task { permissionDenied = await Reminders.isDenied() }
+        .onChange(of: events.pet?.id) { _, _ in dismiss() }
+        .task {
+            permissionDenied = await Reminders.isDenied()
+            if permissionDenied { reminders = false }
+        }
         .onAppear {
             guard !loaded else { return }; loaded = true
             if let item { name = item.name; at = ScheduleEngine.date(forMinutes: item.minutes, onDayOf: .now) ?? .now; interval = item.intervalDays; start = item.startDate; reminders = item.remindersEnabled && (item.reminderPhoneID ?? events.phoneID) == events.phoneID }
@@ -224,10 +264,13 @@ struct DueEditor: View {
     }
     private func save() async {
         guard let pet = events.pet else { return }
-        if reminders && !LaunchOptions.contains("-UITesting") { _ = await Reminders.requestPermission() }
+        if reminders && !LaunchOptions.contains("-UITesting") {
+            permissionDenied = !(await Reminders.requestPermission())
+            if permissionDenied { reminders = false; return }
+        }
         // Another phone's reminder stays with it unless this phone takes it over.
         let elsewhere = item.flatMap { $0.remindersEnabled ? $0.reminderPhoneID : nil }.flatMap { $0 == events.phoneID ? nil : $0 }
-        let value = DueItem(id: item?.id ?? UUID(), petID: pet.id, name: name.trimmingCharacters(in: .whitespacesAndNewlines), minutes: ScheduleEngine.minutes(from: at), intervalDays: interval, startDate: start, remindersEnabled: reminders || elsewhere != nil, reminderPhoneID: reminders ? events.phoneID : elsewhere, editedBy: events.caregiver)
+        let value = DueItem(id: item?.id ?? UUID(), petID: item?.petID ?? pet.id, name: name.trimmingCharacters(in: .whitespacesAndNewlines), minutes: ScheduleEngine.minutes(from: at), intervalDays: interval, startDate: start, remindersEnabled: reminders || elsewhere != nil, reminderPhoneID: reminders ? events.phoneID : elsewhere, editedBy: events.caregiver)
         if events.saveDueItem(value) { dismiss() }
     }
 }

@@ -53,7 +53,30 @@ struct RootView: View {
             Button("OK") { sharing.error = nil }
         } message: { Text(sharing.error ?? "") }
         .onReceive(NotificationCenter.default.publisher(for: .openNow)) { _ in tab = 0 }
+        .sheet(isPresented: Binding(get: { needsName }, set: { _ in })) { NameSheet().interactiveDismissDisabled() }
     }
+    /// Joining skips onboarding. Ask once, before the first entry, so a partner never reads "You".
+    private var needsName: Bool {
+        onboarded && !events.awaitingShare && !events.hasCaregiverName && !LaunchOptions.contains("-EmptyLog") && screenshotSheet == nil
+    }
+}
+
+private struct NameSheet: View {
+    @EnvironmentObject private var events: EventStore
+    @State private var name = ""
+    @FocusState private var focused: Bool
+    private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Your name", text: $name).textContentType(.givenName).focused($focused)
+                    .submitLabel(.done).onSubmit { save() }.accessibilityIdentifier("name.field")
+            }.biscuitList().navigationTitle("Your name").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(trimmed.isEmpty).accessibilityIdentifier("name.save") } }
+            .onAppear { focused = true }
+        }
+    }
+    private func save() { if !trimmed.isEmpty { events.caregiver = trimmed } }
 }
 
 extension String: @retroactive Identifiable { public var id: String { self } }

@@ -44,7 +44,9 @@ struct PetApp: App {
                     #if DEBUG
                     if phase == .background { Task { await ReminderProbe.scheduleIfAsked(events: events) } }
                     #endif
+                    if phase == .background { events.lastLogged = nil; events.notificationMedicationID = nil; events.notificationScheduledAt = nil }
                     guard phase == .active else { return }
+                    events.sync.activated()
                     events.reload()
                     Task { await store.refresh(); await sharing.refresh() }
                 }
@@ -95,6 +97,7 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate, @unc
             let store = EventStore.shared
             if let petID { store.focus(petID: petID) }
             store.notificationMedicationID = isMedication ? itemID : nil
+            store.notificationScheduledAt = isMedication ? scheduledAt : nil
             if isDueCompletion, let itemID, let scheduledAt,
                let item = store.dueItems.first(where: { $0.id == itemID && !$0.archived }),
                !EventLedger.visible(store.events).contains(where: { $0.dueItemID == itemID && $0.scheduledAt == scheduledAt }) {

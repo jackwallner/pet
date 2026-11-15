@@ -8,41 +8,43 @@ struct NowView: View {
     @State private var meds = false
     @State private var addPet = false
     @State private var editPet = false
+    @State private var reminderDose: Medication?
+    @State private var tileDose: Medication?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 LapseBanner()
                 if let pet = events.pet {
                     PetHeader(pet: pet) { editPet = true }
-                    if events.isSharedLog { SyncLine(sync: events.sync) }
+                    if events.isSharedLog { SyncLine(sync: events.sync, store: events.syncStoreID) }
                     if let medication = events.petMedications.first(where: { $0.id == events.notificationMedicationID }) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label(medication.name, systemImage: "pills").font(.headline)
-                            if let dose = NowSummary.lastDose(medication.id, events: events.events) {
-                                Text("\(dose.doseStatus?.rawValue ?? "Logged") \(dose.occurredAt.formatted(date: .abbreviated, time: .shortened)) · \(dose.performedBy)")
-                            } else { Text("Last dose: Nothing logged") }
-                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+                        Button { reminderDose = medication } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Label(medication.name, systemImage: "pills").font(.headline)
+                                    if let dose = NowSummary.lastDose(medication.id, events: events.events) {
+                                        Text("\(dose.doseStatus?.rawValue ?? "Logged") \(NowSummary.when(dose.occurredAt)) · \(dose.performedBy)")
+                                    } else { Text("Last dose: Nothing logged") }
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary).accessibilityHidden(true)
+                            }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12)).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
                             .accessibilityElement(children: .combine).accessibilityIdentifier("medication.reminderContext")
                     }
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: typeSize.isAccessibilitySize ? 1 : 2), spacing: 12) {
                         ForEach(pet.shownLogKinds) { kind in
-                            LogButton(kind: kind, last: NowSummary.last(kind, petID: pet.id, events: events.events)) {
-                                if kind == .meds { meds = true }
+                            let last = NowSummary.last(kind, petID: pet.id, events: events.events)
+                            LogButton(kind: kind, last: last, medication: medicationName(last)) {
+                                // Decided at the tap: a sheet that re-decided live would swap to a dose form mid-edit.
+                                if kind == .meds, events.petMedications.count == 1 { tileDose = events.petMedications.first }
+                                else if kind == .meds { meds = true }
                                 else if events.log(kind) { askForRatingSoon() }
                             }
                         }
                     }
-                    if let last = events.lastLogged {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(last.action == .log ? "Logged \(last.kind.rawValue.lowercased())" : "Correction saved").font(.subheadline)
-                            Spacer()
-                            Button("Undo") {
-                                if events.correct(last, action: .undo) { events.lastLogged = nil }
-                            }.accessibilityIdentifier("log.undo")
-                        }.padding().background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    NextList()
+                    NextList(sync: events.sync)
                 } else {
                     ContentUnavailableView("Add your pet", systemImage: "pawprint")
                     PrimaryButton(title: "Add a pet") { addPet = true }
@@ -50,6 +52,35 @@ struct NowView: View {
             }.padding(20)
         }
         .background(Theme.background)
+        // Pinned, so a log tap is confirmed even when large text pushes the grid past the fold.
+        .safeAreaInset(edge: .bottom) {
+            if let last = events.lastLogged {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(UndoCopy.text(last, medication: medicationName(last))).font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button("Undo") {
+                        if events.correct(last, action: .undo) {
+                            events.lastLogged = nil
+                            AccessibilityNotification.Announcement("Undone").post()
+                        }
+                    }.font(.headline).frame(minHeight: 44).accessibilityIdentifier("log.undo")
+                }.padding(.horizontal).padding(.vertical, 8)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+                    .padding(.horizontal, 20).padding(.bottom, 8)
+            }
+        }
+        .sensoryFeedback(.success, trigger: events.lastLogged?.id) { _, new in new != nil }
+        .task(id: events.lastLogged?.id) {
+            guard let last = events.lastLogged else { return }
+            // An Undo left up for hours is one stray tap from erasing the last real feeding.
+            // The 30 seconds run from the entry, not from this view appearing, so leaving Now cannot revive it.
+            let remaining = 30 - Date.now.timeIntervalSince(last.recordedAt)
+            if remaining > 25 { AccessibilityNotification.Announcement(UndoCopy.text(last, medication: medicationName(last))).post() }
+            if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+            guard !Task.isCancelled, events.lastLogged?.id == last.id else { return }
+            events.lastLogged = nil
+        }
         .navigationTitle(events.pet?.name ?? AppConfig.displayName)
         .toolbar {
             if events.pets.count > 1 {
@@ -61,14 +92,27 @@ struct NowView: View {
             }
         }
         .sheet(isPresented: $meds) { NavigationStack { MedicationsView().toolbar { ToolbarItem(placement: .cancellationAction) { DismissButton() } } } }
+        // One medication: the tile logs it, like every other tile, instead of opening a list of one.
+        .sheet(item: $tileDose) { med in NavigationStack { DoseView(medication: med, scheduledAt: events.notificationMedicationID == med.id ? notifiedSlot : nil) } }
+        .sheet(item: $reminderDose) { med in NavigationStack { DoseView(medication: med, scheduledAt: notifiedSlot) } }
         .sheet(isPresented: $addPet) { NavigationStack { PetEditor(profile: nil) } }
         .sheet(isPresented: $editPet) { NavigationStack { PetEditor(profile: events.pet) } }
+    }
+    /// A reminder left in Notification Center can be tapped a day late. Its time is a preset only while it is
+    /// near enough to be this dose; otherwise the actual time picks, so a missed slot never takes today's dose.
+    private var notifiedSlot: Date? { events.notificationScheduledAt.flatMap { DoseSlots.nearest([$0], to: .now) } }
+    /// The Meds tile names which medication its last entry was, unless it can only be the one active medication.
+    /// An archived medication's dose must never read as the remaining one's.
+    private func medicationName(_ last: EventRecord?) -> String? {
+        guard let id = last?.medicationID else { return nil }
+        if events.petMedications.count == 1, events.petMedications.first?.id == id { return nil }
+        return events.medications.first { $0.id == id }?.name
     }
     private func askForRatingSoon() {
         guard !LaunchOptions.contains("-UITesting"), RatingAsk.isDue() else { return }
         Task {
             try? await Task.sleep(for: .seconds(3))
-            guard !meds, !addPet, !editPet, RatingAsk.isDue() else { return }
+            guard !meds, !addPet, !editPet, reminderDose == nil, tileDose == nil, RatingAsk.isDue() else { return }
             RatingAsk.markAsked()
             requestReview()
         }
@@ -105,19 +149,24 @@ private struct PetHeader: View {
 private struct LogButton: View {
     let kind: EventKind
     let last: EventRecord?
+    var medication: String?
     let action: () -> Void
     @EnvironmentObject private var events: EventStore
     var body: some View {
+        // One clock for the tile and its spoken label, so neither keeps saying a bare time past midnight.
+        TimelineView(.everyMinute) { time in button(now: time.date) }
+    }
+    private func button(now: Date) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
                 Image(systemName: kind.symbol).font(.title2).frame(width: 32, height: 32, alignment: .leading).accessibilityHidden(true)
                 Text(kind.rawValue).font(.title3.weight(.semibold))
                 VStack(alignment: .leading, spacing: 3) {
                     if let last {
-                        Text(last.occurredAt, format: .dateTime.hour().minute()).font(.subheadline.monospacedDigit())
-                        Text(last.performedBy + (last.doseStatus.map { " · \($0.rawValue)" } ?? "")).font(.footnote)
-                    } else { Text("Nothing logged").font(.footnote) }
-                }.foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(NowSummary.when(last.occurredAt, now: now)).font(.body.weight(.semibold).monospacedDigit()).foregroundStyle(.primary)
+                        Text(detail(last)).font(.subheadline).foregroundStyle(.secondary)
+                    } else { Text("Nothing logged").font(.subheadline).foregroundStyle(.secondary) }
+                }.fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
             .padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16))
@@ -125,12 +174,16 @@ private struct LogButton: View {
         }
         .buttonStyle(.plain).disabled(!events.canWrite && kind != .meds)
         .accessibilityIdentifier("log.\(kind.rawValue.lowercased())")
-        .accessibilityLabel("\(kind.rawValue). \(last.map { "Last \($0.occurredAt.formatted(date: .omitted, time: .shortened)), \($0.performedBy)" } ?? "Nothing logged")")
+        .accessibilityLabel("\(kind.rawValue). \(last.map { "Last \(NowSummary.when($0.occurredAt, now: now)), \(detail($0))" } ?? "Nothing logged")")
+    }
+    private func detail(_ last: EventRecord) -> String {
+        ([last.performedBy] + [last.doseStatus?.rawValue, medication].compactMap { $0 }).joined(separator: " · ")
     }
 }
 
 struct NextList: View {
     @EnvironmentObject private var events: EventStore
+    @ObservedObject var sync: CloudSyncState
     @State private var dose: DoseSelection?
     struct DoseSelection: Identifiable {
         let medication: Medication
@@ -147,6 +200,11 @@ struct NextList: View {
             .filter { !$0.completed }.sorted { $0.date < $1.date }
     }
     var body: some View {
+        // Redrawn on a clock so "not logged" turns into "not logged on this iPhone" the moment the log goes stale.
+        TimelineView(.periodic(from: .now, by: 10)) { time in list(now: time.date) }
+    }
+    @ViewBuilder private func list(now: Date) -> some View {
+        let behind = events.isSharedLog && sync.stale(store: events.syncStoreID, at: now)
         if !doses.isEmpty || !due.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Next").font(.title2.weight(.semibold)).padding(.bottom, 12)
@@ -155,8 +213,9 @@ struct NextList: View {
                         HStack(alignment: .firstTextBaseline) {
                             Text(slot.medication.name).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 16)
-                            Text(slot.at, style: .time).foregroundStyle(.secondary)
-                        }.padding(.vertical, 14).contentShape(Rectangle())
+                            // A phone that is behind can only speak for itself, not for a partner's dose.
+                            Text(slot.at < now ? "\(slot.at.formatted(date: .omitted, time: .shortened)), not logged\(behind ? " on this iPhone" : "")" : slot.at.formatted(date: .omitted, time: .shortened)).foregroundStyle(.secondary)
+                        }.padding(.vertical, 14).contentShape(Rectangle()).accessibilityElement(children: .combine)
                     }.buttonStyle(.plain)
                     Divider()
                 }
@@ -174,6 +233,19 @@ struct NextList: View {
                 }
             }
             .sheet(item: $dose) { slot in NavigationStack { DoseView(medication: slot.medication, scheduledAt: slot.at) } }
+        }
+    }
+}
+
+enum UndoCopy {
+    static func text(_ event: EventRecord, medication: String? = nil) -> String {
+        guard event.action == .log else { return "Correction saved" }
+        switch event.kind {
+        case .meds:
+            let dose = medication.map { "\($0) dose" } ?? "dose"
+            return event.doseStatus == .skipped ? "Logged skipped \(dose)" : "Logged \(dose)"
+        case .due: return event.note.isEmpty ? "Marked done" : "\(event.note) done"
+        default: return "Logged \(event.kind.rawValue.lowercased())"
         }
     }
 }

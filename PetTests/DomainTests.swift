@@ -250,7 +250,7 @@ final class DomainTests: XCTestCase {
                                  writablePets: Set(source.pets.enumerated().filter { source.access.canWrite(petIndex: $0.offset, at: now) }.map(\.element.id)),
                                  now: now, calendar: calendar)
         }
-        XCTAssertEqual(planned.count, 7)
+        XCTAssertEqual(planned.count, 30)
         store.focus(petID: milo)
         XCTAssertTrue(store.isOwner)
         XCTAssertEqual(store.pet?.id, milo)
@@ -331,7 +331,7 @@ final class DomainTests: XCTestCase {
         let medication = med()
         let now = day(2026, 11, 6)
         let own = ReminderPlanner.plan(medications: [medication], items: [], events: [], phoneID: store.phoneID, writablePets: [store.pet!.id], now: now, calendar: calendar)
-        XCTAssertEqual(own.count, 7)
+        XCTAssertEqual(own.count, 30)
         XCTAssertTrue(own.allSatisfy { $0.isMedication && $0.actions.isEmpty && $0.category == "pet.medication" && $0.body.contains("sync time") })
         XCTAssertTrue(ReminderPlanner.plan(medications: [medication], items: [], events: [], phoneID: "other", writablePets: [store.pet!.id], now: now, calendar: calendar).isEmpty)
     }
@@ -361,12 +361,98 @@ final class DomainTests: XCTestCase {
     func testOnlySuccessfulImportAdvancesSyncTime() {
         let sync = CloudSyncState(defaults: defaults, cloudEnabled: true)
         let now = Date.now
-        sync.ended(isImport: false, isSetup: false, at: now, succeeded: true, error: nil)
-        XCTAssertNil(sync.lastSynced)
-        sync.ended(isImport: true, isSetup: false, at: now, succeeded: false, error: NSError(domain: "test", code: 1))
-        XCTAssertNil(sync.lastSynced)
-        sync.ended(isImport: true, isSetup: false, at: now, succeeded: true, error: nil)
-        XCTAssertEqual(sync.lastSynced, now)
+        sync.ended(store: "shared", isImport: false, isSetup: false, at: now, succeeded: true, error: nil)
+        XCTAssertNil(sync.lastSynced(store: "shared"))
+        sync.ended(store: "shared", isImport: true, isSetup: false, at: now, succeeded: false, error: NSError(domain: "test", code: 1))
+        XCTAssertNil(sync.lastSynced(store: "shared"))
+        sync.ended(store: "shared", isImport: true, isSetup: false, at: now, succeeded: true, error: nil)
+        XCTAssertEqual(sync.lastSynced(store: "shared"), now)
+    }
+    func testAnotherStoresDownloadNeverMakesThisHouseholdFresh() {
+        let sync = CloudSyncState(defaults: defaults, cloudEnabled: true)
+        let now = Date.now
+        sync.ended(store: "private", isImport: true, isSetup: false, at: now, succeeded: true, error: nil)
+        XCTAssertNil(sync.lastSynced(store: "shared"))
+        XCTAssertTrue(sync.stale(store: "shared", at: now))
+        // A failed download is not cleared by a successful upload.
+        sync.ended(store: "shared", isImport: true, isSetup: false, at: now, succeeded: false, error: NSError(domain: "test", code: 1))
+        sync.ended(store: "shared", isImport: false, isSetup: false, at: now, succeeded: true, error: nil)
+        XCTAssertTrue(sync.problem(store: "shared"))
+        XCTAssertFalse(sync.problem(store: "private"))
+        sync.ended(store: "shared", isImport: true, isSetup: false, at: now, succeeded: true, error: nil)
+        XCTAssertFalse(sync.problem(store: "shared"))
+        XCTAssertEqual(CloudSyncState(defaults: defaults, cloudEnabled: true).lastSynced(store: "shared"), now)
+    }
+    func testNowTimesNameTheDay() {
+        let now = calendar.date(from: DateComponents(year: 2026, month: 11, day: 14, hour: 9))!
+        let morning = calendar.date(from: DateComponents(year: 2026, month: 11, day: 14, hour: 8))!
+        let yesterday = calendar.date(from: DateComponents(year: 2026, month: 11, day: 13, hour: 18))!
+        let older = calendar.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 18))!
+        XCTAssertFalse(NowSummary.when(morning, now: now, calendar: calendar).contains("Yesterday"))
+        XCTAssertTrue(NowSummary.when(yesterday, now: now, calendar: calendar).hasPrefix("Yesterday "))
+        XCTAssertTrue(NowSummary.when(older, now: now, calendar: calendar).contains("Nov"))
+        let lastYear = calendar.date(from: DateComponents(year: 2025, month: 11, day: 10, hour: 8))!
+        XCTAssertTrue(NowSummary.when(lastYear, now: now, calendar: calendar).contains("2025"))
+    }
+    func testBackdatedDoseNeverClosesTodaysSlot() {
+        let medication = med(minutes: [480, 1320])
+        let at = { (d: Int, h: Int, m: Int) in self.calendar.date(from: DateComponents(year: 2026, month: 11, day: d, hour: h, minute: m))! }
+        // 12:30 AM for last night's 10 PM dose: today's 8 AM is not a candidate.
+        let late = DoseSlots.candidates(for: medication, actual: at(14, 0, 30), preset: nil, events: [], calendar: calendar)
+        XCTAssertEqual(DoseSlots.nearest(late, to: at(14, 0, 30)), at(13, 22, 0))
+        XCTAssertNotEqual(DoseSlots.nearest(late, to: at(14, 0, 30)), at(14, 8, 0))
+        // 6:30 AM for the 8 AM dose: early, but still its slot.
+        let early = DoseSlots.candidates(for: medication, actual: at(14, 6, 30), preset: nil, events: [], calendar: calendar)
+        XCTAssertEqual(DoseSlots.nearest(early, to: at(14, 6, 30)), at(14, 8, 0))
+        // Backdated to yesterday evening: yesterday's slot, never today's.
+        let backdated = DoseSlots.candidates(for: medication, actual: at(13, 21, 0), preset: nil, events: [], calendar: calendar)
+        XCTAssertEqual(DoseSlots.nearest(backdated, to: at(13, 21, 0)), at(13, 22, 0))
+        // An extra dose mid-morning, with 8 AM already given, is unscheduled instead of claiming 10 PM.
+        let given = event(.meds, medicationID: medication.id, scheduledAt: at(14, 8, 0), status: .given)
+        let yesterdayGiven = [at(13, 8, 0), at(13, 22, 0)].map { event(.meds, medicationID: medication.id, scheduledAt: $0, status: .given) }
+        let extra = DoseSlots.candidates(for: medication, actual: at(14, 10, 0), preset: nil, events: [given] + yesterdayGiven, calendar: calendar)
+        XCTAssertNil(DoseSlots.nearest(extra, to: at(14, 10, 0)))
+    }
+    func testLateOnceDailyDoseKeepsItsSlot() {
+        let medication = med(minutes: [480])
+        let at = { (h: Int, m: Int) in self.calendar.date(from: DateComponents(year: 2026, month: 11, day: 14, hour: h, minute: m))! }
+        let candidates = DoseSlots.candidates(for: medication, actual: at(19, 15), preset: nil, events: [], calendar: calendar)
+        XCTAssertTrue(candidates.contains(at(8, 0)))
+        XCTAssertEqual(DoseSlots.auto(for: medication, candidates: candidates, actual: at(19, 15), calendar: calendar), at(8, 0))
+        XCTAssertNil(DoseSlots.auto(for: med(minutes: [480, 1320]), candidates: [at(8, 0)], actual: at(16, 0), calendar: calendar))
+    }
+    func testFreshActivationReadsAsCheckingNotBehind() {
+        let sync = CloudSyncState(defaults: defaults, cloudEnabled: true)
+        let then = Date.now.addingTimeInterval(-3600)
+        sync.ended(store: "shared", isImport: true, isSetup: false, at: then, succeeded: true, error: nil)
+        sync.activated(at: .now)
+        XCTAssertTrue(sync.stale(store: "shared", at: .now))
+        XCTAssertTrue(sync.checking(store: "shared", at: .now))
+        XCTAssertFalse(sync.checking(store: "shared", at: .now.addingTimeInterval(60)))
+        XCTAssertFalse(sync.checking(store: "never", at: .now))
+    }
+    func testLastPlannedMedicationReminderIsFollowedByARenewal() throws {
+        let medication = med(minutes: [480, 1200])
+        let now = day(2026, 11, 6)
+        let plan = ReminderPlanner.plan(medications: [medication], items: [], events: [], phoneID: store.phoneID, writablePets: [store.pet!.id], now: now, calendar: calendar)
+        XCTAssertEqual(plan.count, 60)
+        let renewal = try XCTUnwrap(ReminderPlanner.renewal(after: plan, medications: [medication], phoneID: store.phoneID, calendar: calendar))
+        XCTAssertEqual(renewal.actions, [])
+        XCTAssertEqual(renewal.category, "pet.renewal")
+        XCTAssertTrue(renewal.isRenewal && !renewal.isMedication)
+        XCTAssertGreaterThan(renewal.date, try XCTUnwrap(plan.last).date)
+        var ending = medication
+        ending.endDate = day(2026, 11, 10)
+        let short = ReminderPlanner.plan(medications: [ending], items: [], events: [], phoneID: store.phoneID, writablePets: [store.pet!.id], now: now, calendar: calendar)
+        XCTAssertNil(ReminderPlanner.renewal(after: short, medications: [ending], phoneID: store.phoneID, calendar: calendar))
+        // An ongoing course cut off by the cap still gets the notice when another course ends on the last planned day.
+        XCTAssertNil(ReminderPlanner.renewal(after: [], medications: [medication], phoneID: store.phoneID, calendar: calendar))
+    }
+    func testDoseForAnotherPetsMedicationIsRefused() {
+        let own = med()
+        XCTAssertTrue(store.saveMedication(own))
+        XCTAssertTrue(store.log(.meds, medicationID: own.id, doseStatus: .given))
+        XCTAssertFalse(store.log(.meds, medicationID: UUID(), doseStatus: .given))
     }
     func testExportContainsEveryCorrectionAndEscapesCSV() {
         let original = EventRecord(petID: store.pet!.id, kind: .meal, author: "Jack", authorID: "1", note: "A, \"quoted\"\nline")
@@ -379,9 +465,20 @@ final class DomainTests: XCTestCase {
     func testSitterSnapshotAndOnePagePDF() throws {
         XCTAssertTrue(store.log(.meal))
         let snapshot = SitterSnapshot.build(pet: store.pet!, medications: [med()], dueItems: [], events: store.events, lastSync: nil)
-        XCTAssertTrue(snapshot.lines.contains(where: { $0.contains("snapshot") }))
+        XCTAssertTrue(snapshot.lines.contains(where: { $0.contains("Check with the household") }))
         XCTAssertTrue(snapshot.lines.contains(AppConfig.disclaimer))
-        XCTAssertTrue(snapshot.lines.contains(where: { $0.contains("Reminder phone:") }))
+        XCTAssertFalse(snapshot.lines.contains(where: { $0.contains("Reminder phone") }))
+        XCTAssertTrue(snapshot.lines.contains("Last: Nothing logged"))
+        var ended = med()
+        ended.name = "Finished course"
+        ended.endDate = Date.now.addingTimeInterval(-3 * 86400)
+        var upcoming = med()
+        upcoming.name = "Later course"
+        upcoming.startDate = Date.now.addingTimeInterval(5 * 86400)
+        let dated = SitterSnapshot.build(pet: store.pet!, medications: [ended, upcoming], dueItems: [], events: store.events, lastSync: nil, shared: false)
+        XCTAssertFalse(dated.lines.contains { $0.contains("Finished course") })
+        XCTAssertTrue(dated.lines.contains { $0.hasPrefix("Later course") && $0.contains("starts") })
+        XCTAssertFalse(dated.lines.contains { $0.hasPrefix("Last sync") })
         let data = try SitterPDF.data(snapshot)
         let pdf = try XCTUnwrap(PDFDocument(data: data))
         XCTAssertEqual(pdf.pageCount, 1)

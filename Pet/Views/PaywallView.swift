@@ -121,16 +121,22 @@ struct OnboardingFooter: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         VStack(spacing: 12) {
-            Text(disclosure ?? " ").font(.footnote).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: typeSize.isAccessibilitySize ? 130 : 54, alignment: .bottomLeading)
-                .fixedSize(horizontal: false, vertical: true).accessibilityHidden(disclosure == nil)
+            // The reserved heights keep the button still between onboarding and the trial page.
+            // At accessibility sizes they would crowd out the name fields above the keyboard, so they go.
+            if disclosure != nil || trial || !typeSize.isAccessibilitySize {
+                Text(disclosure ?? " ").font(.footnote).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: typeSize.isAccessibilitySize ? 130 : 54, alignment: .bottomLeading)
+                    .fixedSize(horizontal: false, vertical: true).accessibilityHidden(disclosure == nil)
+            }
             PrimaryButton(title: title, disabled: disabled, action: action).accessibilityIdentifier("onboarding.primary")
-            VStack(spacing: 12) {
-                if trial {
-                    Button("Get Started", action: { exit?() }).font(.subheadline).accessibilityIdentifier("onboarding.free")
-                    LegalLinks()
-                } else { Color.clear.accessibilityHidden(true) }
-            }.frame(height: typeSize.isAccessibilitySize ? 140 : 70)
+            if trial || !typeSize.isAccessibilitySize {
+                VStack(spacing: 12) {
+                    if trial {
+                        Button("Get Started", action: { exit?() }).font(.subheadline).accessibilityIdentifier("onboarding.free")
+                        LegalLinks()
+                    } else { Color.clear.accessibilityHidden(true) }
+                }.frame(height: typeSize.isAccessibilitySize ? 140 : 70)
+            }
         }.padding(.horizontal, 20).padding(.bottom, 8).background(Theme.background)
     }
 }
