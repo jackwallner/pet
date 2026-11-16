@@ -16,8 +16,8 @@ struct SitterView: View {
                         Image(systemName: "doc.text").font(.system(size: 48)).foregroundStyle(Theme.accent)
                         Text(events.pets.count > 1 ? "One page per pet" : "One-page PDF").font(.title2.weight(.semibold))
                         if let error { Text(error).foregroundStyle(.secondary) }
-                    }.padding(20)
-                }.background(Theme.background)
+                    }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.background)
             }
         }
         .navigationTitle("Sitter sheet").navigationBarTitleDisplayMode(.inline)
