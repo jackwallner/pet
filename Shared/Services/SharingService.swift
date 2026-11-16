@@ -8,6 +8,8 @@ final class SharingService: ObservableObject {
     static let shared = SharingService(events: .shared)
     @Published var share: CKShare?
     @Published var error: String?
+    /// The join screen shows its own error inline, so the app-level alert stays quiet while it is open.
+    @Published var joinVisible = false
     @Published var busy = false
     private var shareHouseholdID: NSManagedObjectID?
     private var refreshGeneration = 0
