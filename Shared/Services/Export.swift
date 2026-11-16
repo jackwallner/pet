@@ -17,7 +17,10 @@ enum LogExport {
         return ([header.joined(separator: ",")] + rows).joined(separator: "\r\n") + "\r\n"
     }
     static func file(pets: [PetProfile], medications: [Medication], events: [EventRecord]) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(AppConfig.displayName)-log-\(UUID().uuidString.prefix(8)).csv")
+        // The person sharing sees this name. A folder per file keeps it readable and still unique.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("\(AppConfig.displayName) log \(Date.now.formatted(.iso8601.year().month().day())).csv")
         try Data(csv(pets: pets, medications: medications, events: events).utf8).write(to: url, options: .atomic)
         return url
     }
