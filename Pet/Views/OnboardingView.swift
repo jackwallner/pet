@@ -45,7 +45,7 @@ struct OnboardingView: View {
                         if events.saveOnboardingPet(profile) { trial = true }
                     }
                 }
-                .sheet(isPresented: $joining) { NavigationStack { JoinView() } }
+                .sheet(isPresented: $joining) { NavigationStack { JoinView().toolbar { ToolbarItem(placement: .cancellationAction) { DismissButton() } } } }
             }
         }.toolbar {
             ToolbarItemGroup(placement: .keyboard) {

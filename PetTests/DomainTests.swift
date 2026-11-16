@@ -496,6 +496,14 @@ final class DomainTests: XCTestCase {
         XCTAssertTrue(csv.contains(original.id.uuidString)); XCTAssertTrue(csv.contains("\"delete\""))
         XCTAssertTrue(csv.contains("target_id"))
     }
+    func testExportFileHasReadableDatedName() throws {
+        let first = try LogExport.file(pets: store.pets, medications: [], events: store.events)
+        let second = try LogExport.file(pets: store.pets, medications: [], events: store.events)
+        let day = Date.now.formatted(.iso8601.year().month().day())
+        XCTAssertEqual(first.lastPathComponent, "\(AppConfig.displayName) log \(day).csv")
+        XCTAssertNotEqual(first, second)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.path))
+    }
     func testSitterSnapshotAndOnePagePDF() throws {
         XCTAssertTrue(store.log(.meal))
         let snapshot = SitterSnapshot.build(pet: store.pet!, medications: [med()], dueItems: [], events: store.events, lastSync: nil)

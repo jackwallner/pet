@@ -99,13 +99,13 @@ struct JoinView: View {
                 Button("Scan QR code") { scanning = true }.disabled(!DataScannerViewController.isSupported || !DataScannerViewController.isAvailable)
                 Button(sharing.busy ? "Joining" : "Join household") { Task { await sharing.join(link) } }
                     .disabled(link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sharing.busy).accessibilityIdentifier("join.submit")
-                // The app-level alert cannot show over this sheet, so a failed join says why here.
+                // A failed join says why here; the app-level alert is held back while this screen is open.
                 if let error = sharing.error { Text(error).foregroundStyle(.red) }
             }
         }.biscuitList().navigationTitle("Join household").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { DismissButton() } }
         .sheet(isPresented: $scanning) { InviteScanner { value in link = value; scanning = false } }
-        .onDisappear { sharing.error = nil }
+        .onAppear { sharing.joinVisible = true }
+        .onDisappear { sharing.joinVisible = false; sharing.error = nil }
     }
 }
 

@@ -49,7 +49,7 @@ struct RootView: View {
         .alert("Could not save", isPresented: Binding(get: { events.error != nil }, set: { if !$0 { events.error = nil } })) {
             Button("OK") { events.error = nil }
         } message: { Text(events.error ?? "") }
-        .alert("Household", isPresented: Binding(get: { sharing.error != nil }, set: { if !$0 { sharing.error = nil } })) {
+        .alert("Household", isPresented: Binding(get: { sharing.error != nil && !sharing.joinVisible }, set: { if !$0 { sharing.error = nil } })) {
             Button("OK") { sharing.error = nil }
         } message: { Text(sharing.error ?? "") }
         .onReceive(NotificationCenter.default.publisher(for: .openNow)) { _ in tab = 0 }
@@ -106,7 +106,7 @@ struct RouteView: View {
             }
         }
         .toolbar {
-            if ["pets", "buttons", "medications", "household", "sitter"].contains(route) {
+            if ["pets", "buttons", "medications", "household", "join", "sitter"].contains(route) {
                 ToolbarItem(placement: .cancellationAction) { DismissButton() }
             }
         }
