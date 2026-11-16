@@ -61,6 +61,8 @@ final class Persistence: @unchecked Sendable {
     /// Nil in production. Tests can inject a throwing operation to exercise
     /// rollback paths without changing the persistent model or store files.
     private let saveOperation: ((NSManagedObjectContext) throws -> Void)?
+    /// The iCloud account mirroring would run under. Tests inject a sign-in; the app asks the system.
+    private let account: @Sendable () -> (any NSObjectProtocol)?
 
     private let privateDescription: NSPersistentStoreDescription
     private let sharedDescription: NSPersistentStoreDescription
@@ -84,19 +86,18 @@ final class Persistence: @unchecked Sendable {
 
     /// Only the app process mirrors to CloudKit. Extensions are short-lived and
     /// memory-capped, and two exporters on one zone gain nothing.
-    private static var processWantsCloudKit: Bool {
-        #if DEBUG
-        return canMirror && !ProcessInfo.processInfo.arguments.contains("-NoCloudKit")
-        #else
-        return canMirror
-        #endif
-    }
+    private static var processWantsCloudKit: Bool { processAccount() != nil }
 
-    private static var canMirror: Bool {
+    /// The iCloud account this process may mirror under, or nil when it must not mirror at all.
+    @Sendable static func processAccount() -> (any NSObjectProtocol)? {
         #if targetEnvironment(simulator)
-        return false
+        return nil
         #else
-        return Bundle.main.bundleIdentifier == AppGroup.bundleID && FileManager.default.ubiquityIdentityToken != nil
+        #if DEBUG
+        guard !ProcessInfo.processInfo.arguments.contains("-NoCloudKit") else { return nil }
+        #endif
+        guard Bundle.main.bundleIdentifier == AppGroup.bundleID else { return nil }
+        return FileManager.default.ubiquityIdentityToken
         #endif
     }
 
@@ -104,11 +105,13 @@ final class Persistence: @unchecked Sendable {
         cloudKit: Bool,
         inMemory: Bool = false,
         directory: URL? = nil,
-        saveOperation: ((NSManagedObjectContext) throws -> Void)? = nil
+        saveOperation: ((NSManagedObjectContext) throws -> Void)? = nil,
+        account: @escaping @Sendable () -> (any NSObjectProtocol)? = Persistence.processAccount
     ) {
         var wantsCloudKit = cloudKit && !inMemory
         self.inMemory = inMemory
         self.saveOperation = saveOperation
+        self.account = account
         container = NSPersistentCloudKitContainer(name: "Pet", managedObjectModel: PetModel.model)
 
         let directory = directory ?? AppGroup.containerURL.appendingPathComponent("PetData", isDirectory: true)
@@ -186,7 +189,7 @@ final class Persistence: @unchecked Sendable {
         container.persistentStoreDescriptions = [privateDescription, sharedDescription]
         // The private store is the household's own log; it decides whether this phone syncs and can share.
         storedCloudKitEnabled = privateDescription.cloudKitContainerOptions != nil
-        attemptedIdentity = cloudKit && !inMemory ? FileManager.default.ubiquityIdentityToken : nil
+        attemptedIdentity = cloudKit && !inMemory ? account() : nil
         container.viewContext.performAndWait {
             container.viewContext.automaticallyMergesChangesFromParent = true
             container.viewContext.mergePolicy = NSMergePolicy.mergeByPropertyObjectTrump
@@ -341,7 +344,7 @@ final class Persistence: @unchecked Sendable {
     /// reopens local-only again, exactly as at launch.
     @discardableResult
     func enableCloudKitIfAvailable() -> Bool {
-        guard !inMemory, !isStandingIn, Self.processWantsCloudKit, let identity = FileManager.default.ubiquityIdentityToken else { return false }
+        guard !inMemory, !isStandingIn, let identity = account() else { return false }
         guard [privateDescription, sharedDescription].contains(where: { $0.cloudKitContainerOptions == nil }),
               !(attemptedIdentity.map { $0.isEqual(identity) } ?? false) else { return false }
         attemptedIdentity = identity

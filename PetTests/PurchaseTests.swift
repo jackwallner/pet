@@ -20,6 +20,54 @@ final class PurchaseTests: XCTestCase {
         try await run.value
     }
 
+    /// The owner's app stays closed while the subscription renews. The background refresh alone must carry
+    /// the new date into the household record the joiner reads, or the joiner turns read-only.
+    func testBackgroundRefreshCarriesRenewalToHouseholdRecord() async throws {
+        let progress = Progress()
+        let run = Task { @MainActor in
+            defer { progress.finished = true }
+            try await exerciseBackgroundRenewal()
+        }
+        let deadline = Date.now.addingTimeInterval(120)
+        while !progress.finished, Date.now < deadline { try await Task.sleep(for: .milliseconds(250)) }
+        guard progress.finished else { throw XCTSkip("StoreKit Testing stalled on this machine") }
+        try await run.value
+    }
+
+    private func exerciseBackgroundRenewal() async throws {
+        let config = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Pet", withExtension: "storekit"))
+        let session = try SKTestSession(contentsOf: config)
+        session.disableDialogs = true
+        session.clearTransactions()
+        defer { session.clearTransactions() }
+        let defaults = UserDefaults(suiteName: "pet.tests.\(UUID())")!
+        let owner = EventStore(persistence: Persistence(cloudKit: false, inMemory: true), defaults: defaults)
+        owner.caregiver = "Jack"
+        XCTAssertTrue(owner.savePet(PetProfile(name: "Milo", editedBy: "Jack")))
+        let store = StoreService()
+        store.didUpdateExpiry = { owner.setHouseholdExpiry($0) }
+        let bought = try await session.buyProduct(identifier: AppConfig.monthly)
+        XCTAssertNotNil(bought.expirationDate)
+        for _ in 0..<40 where owner.household?.householdActiveUntil == nil {
+            await BackgroundRefresh.perform(events: owner, store: store)
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        let first = try XCTUnwrap(owner.household?.householdActiveUntil)
+
+        try session.forceRenewalOfSubscription(productIdentifier: AppConfig.monthly)
+        for _ in 0..<40 where owner.household?.householdActiveUntil == first {
+            await BackgroundRefresh.perform(events: owner, store: store)
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        let renewed = try XCTUnwrap(owner.household?.householdActiveUntil)
+        XCTAssertGreaterThan(renewed, first)
+
+        // What the joiner's phone decides from that record, a day past the old date's grace.
+        let later = first.addingTimeInterval(HouseholdAccess.grace + 86400)
+        XCTAssertFalse(HouseholdAccess(activeUntil: first, isOwner: false, wasShared: true).canWrite(petIndex: 0, at: later))
+        XCTAssertTrue(HouseholdAccess(activeUntil: renewed, isOwner: false, wasShared: true).canWrite(petIndex: 0, at: later))
+    }
+
     private final class Progress { var finished = false }
 
     private func exercisePurchaseFlow() async throws {

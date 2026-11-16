@@ -2,6 +2,7 @@ import CoreData
 import CoreImage
 import PDFKit
 import XCTest
+import UIKit
 import UserNotifications
 
 @testable import Pet
@@ -705,6 +706,63 @@ final class DomainTests: XCTestCase {
         let blocked = EventStore(persistence: closed, defaults: defaults)
         XCTAssertFalse(blocked.savePet(PetProfile(name: "Milo", editedBy: "Jack")))
         XCTAssertNotNil(blocked.error)
+    }
+    func testSignInAfterSignedOutLaunchMirrorsWithoutRelaunch() throws {
+        final class Account: @unchecked Sendable { var token: NSString? }
+        let account = Account()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let disk = Persistence(cloudKit: false, directory: directory, account: { account.token })
+        let phone = EventStore(persistence: disk, defaults: defaults)
+        phone.caregiver = "Jack"
+        XCTAssertTrue(phone.savePet(PetProfile(name: "Milo", editedBy: "Jack")))
+        XCTAssertTrue(phone.log(.meal))
+        phone.activate()
+        XCTAssertFalse(disk.cloudKitEnabled)
+        XCTAssertFalse(phone.sync.cloudEnabled)
+        var reopened = 0
+        let observer = NotificationCenter.default.addObserver(forName: Persistence.storesDidReopen, object: disk, queue: nil) { _ in reopened += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        account.token = "signed-in"
+        phone.activate()
+        XCTAssertEqual(reopened, 1)
+        XCTAssertTrue(disk.cloudKitEnabled)
+        XCTAssertTrue(disk.unmirroredStoreIDs.isEmpty)
+        XCTAssertTrue(phone.sync.cloudEnabled)
+        XCTAssertEqual(phone.events.count, 1)
+        XCTAssertTrue(phone.log(.walk))
+        XCTAssertEqual(phone.events.count, 2)
+        phone.activate()
+        XCTAssertEqual(reopened, 1)
+    }
+    func testLaunchBeforeFirstUnlockRecoversAfterUnlock() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        do {
+            let before = EventStore(persistence: Persistence(cloudKit: false, directory: directory), defaults: defaults)
+            before.caregiver = "Jack"
+            XCTAssertTrue(before.savePet(PetProfile(name: "Milo", editedBy: "Jack")))
+            XCTAssertTrue(before.log(.meal))
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: directory.path)
+        let locked = Persistence(cloudKit: false, directory: directory)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        XCTAssertTrue(locked.isStandingIn)
+        let phone = EventStore(persistence: locked, defaults: defaults)
+        phone.caregiver = "Jack"
+        XCTAssertTrue(phone.events.isEmpty)
+        XCTAssertFalse(phone.log(.walk))
+        NotificationCenter.default.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+        for _ in 0..<20 where phone.events.isEmpty { try await Task.sleep(for: .milliseconds(100)) }
+        XCTAssertFalse(locked.isStandingIn)
+        XCTAssertEqual(phone.pet?.name, "Milo")
+        XCTAssertEqual(phone.events.count, 1)
+        XCTAssertTrue(phone.log(.walk))
+        XCTAssertEqual(phone.events.count, 2)
+    }
+    func testBackgroundRefreshIsPermittedByInfoPlist() {
+        let permitted = Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String]
+        XCTAssertEqual(permitted, [BackgroundRefresh.identifier])
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+        XCTAssertTrue(modes.contains("fetch"))
     }
     func testRegisteredMedicationCategoryHasNoCompletionAction() async {
         Reminders.register()

@@ -33,24 +33,29 @@ enum BackgroundRefresh {
             task.setTaskCompleted(success: success)
         }
         let work = Task { @MainActor in
-            // After a reboot the files may have reopened local-only; sync must be on before the expiry is written,
-            // or the date never reaches the joiner this refresh exists for.
-            EventStore.shared.activate()
-            await StoreService.shared.start()
-            await StoreService.shared.refresh()
-            EventStore.shared.reload()
-            // Finishing before the replacement is done could leave old requests unpruned or new ones missing.
-            // A sync landing meanwhile starts a newer one, so wait until the latest has finished.
-            while let current = Reminders.replacing {
-                await current.value
-                if Reminders.replacing == current { break }
-            }
+            await perform()
             complete(!Task.isCancelled)
         }
         // Not main-actor isolated: iOS may call expiry from any thread.
         task.expirationHandler = { @Sendable in
             work.cancel()
             Task { @MainActor in complete(false) }
+        }
+    }
+
+    /// The refresh itself. The purchase service hands the expiry to the log through `didUpdateExpiry`.
+    static func perform(events: EventStore = .shared, store: StoreService = .shared) async {
+        // After a reboot the files may have reopened local-only; sync must be on before the expiry is written,
+        // or the date never reaches the joiner this refresh exists for.
+        events.activate()
+        await store.start()
+        await store.refresh()
+        events.reload()
+        // Finishing before the replacement is done could leave old requests unpruned or new ones missing.
+        // A sync landing meanwhile starts a newer one, so wait until the latest has finished.
+        while let current = Reminders.replacing {
+            await current.value
+            if Reminders.replacing == current { break }
         }
     }
 }
