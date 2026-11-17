@@ -11,7 +11,7 @@ paths:
 # Verification
 
 On the Air, lease a simulator with `agent-sim checkout pet`. On the iMac there is no Xcode, so use `gh-sim all`.
-On GitHub's Macs two tests skip: the StoreKit purchase test stalls and notification banners never show. The notification test passes on a local simulator, so run it there after touching `NotificationRouter`. The purchase test stalled and skipped on some local simulators too, so read its result: a skip proves nothing about purchases.
+On GitHub's Macs four tests skip: the StoreKit purchase test stalls, notification banners never show, and the unsigned host has no app group or iCloud entitlement, so the CloudKit sign-in test (CloudKit would trap) and the background renewal test (StoreKit never delivers) skip. Run those locally after touching `Persistence` or `BackgroundRefresh`. The notification test passes on a local simulator, so run it there after touching `NotificationRouter`. The purchase test stalled and skipped on some local simulators too, so read its result: a skip proves nothing about purchases.
 
 Debug flags: `-SeedDemo`, `-DemoPro`, `-Onboarding`, `-OnboardingTrial`, `-EmptyLog`,
 `-UITesting`, `-SimPartner`, `-ReminderProbe`, `-NoCloudKit`, `-Appearance light|dark`, `-LargeText`, `-SmallPhone`,

@@ -23,6 +23,8 @@ final class PurchaseTests: XCTestCase {
     /// The owner's app stays closed while the subscription renews. The background refresh alone must carry
     /// the new date into the household record the joiner reads, or the joiner turns read-only.
     func testBackgroundRefreshCarriesRenewalToHouseholdRecord() async throws {
+        // On an unsigned host (GitHub's Macs) StoreKit Testing never delivers the purchased entitlement.
+        try XCTSkipIf(FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.id) == nil, "Unsigned test host: StoreKit Testing entitlements never arrive")
         let progress = Progress()
         let run = Task { @MainActor in
             defer { progress.finished = true }

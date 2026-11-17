@@ -716,6 +716,9 @@ final class DomainTests: XCTestCase {
         XCTAssertNotNil(blocked.error)
     }
     func testSignInAfterSignedOutLaunchMirrorsWithoutRelaunch() throws {
+        // Real mirroring starts here. An unsigned host (GitHub's Macs) has no iCloud entitlement,
+        // and CloudKit then traps on a background queue, crashing whichever test runs next.
+        try XCTSkipIf(FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.id) == nil, "Unsigned test host has no iCloud entitlement")
         final class Account: @unchecked Sendable { var token: NSString? }
         let account = Account()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
