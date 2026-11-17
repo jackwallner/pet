@@ -98,7 +98,6 @@ private struct PetHeader: View {
                 (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 14))) {
                     PetAvatar(image: image, symbol: pet.species.symbol, size: 72)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(pet.species.rawValue).font(.headline)
                         if let age { Text(age).font(.subheadline).foregroundStyle(.secondary) }
                         if image == nil && events.canWrite { Text("Add photo").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accent) }
                     }.fixedSize(horizontal: false, vertical: true)
@@ -108,6 +107,7 @@ private struct PetHeader: View {
             }.contentShape(Rectangle())
         }
         .buttonStyle(.plain).accessibilityIdentifier("now.pet")
+        .accessibilityLabel([pet.name, age, image == nil && events.canWrite ? "Add photo" : nil].compactMap { $0 }.joined(separator: ", "))
     }
 }
 

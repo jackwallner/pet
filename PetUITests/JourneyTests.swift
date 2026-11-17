@@ -222,6 +222,7 @@ final class JourneyTests: XCTestCase {
         XCTAssertTrue(header.waitForExistence(timeout: 15))
         shot(app, "pet-now-photo")
         XCTAssertFalse(app.staticTexts["Add photo"].exists)
+        XCTAssertFalse(app.staticTexts["Dog"].exists)
         header.tap()
         XCTAssertTrue(app.buttons["pet.photo.remove"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["pet.photo"].exists)
